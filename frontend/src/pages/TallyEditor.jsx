@@ -65,7 +65,7 @@ const isEmpty = (r) =>
 function clientValidate(rows, action, settings) {
   const errs = {};
   const seen = {};
-  const rule = settings.duplicate_rule || "within_document";
+  const rule = settings?.duplicate_rule || "within_document";
 
   rows.forEach((r, i) => {
     if (!r.material_code) {
@@ -83,7 +83,7 @@ function clientValidate(rows, action, settings) {
         pic: r.pic_id || "ok"
       };
       Object.entries(vals).forEach(([f, v]) => {
-        if (settings.required?.[f] && !v) {
+        if (settings?.required?.[f] && !v) {
           errs[`${i}-${f}`] = `${LABELS[f]} wajib diisi`;
         }
       });
@@ -174,6 +174,7 @@ export default function TallyEditor() {
   };
 
   const update = (i, patch) => {
+    if (!patch || typeof patch !== "object") return;
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
     setErrors((er) => {
       const n = { ...er };
@@ -560,10 +561,11 @@ export default function TallyEditor() {
                       index={i}
                       row={row}
                       errors={errors}
-                      onChange={update}
-                      onDuplicate={duplicate}
-                      onRemove={remove}
-                      disableRemove={rows.length === 1}
+                      onChange={(patch) => update(i, patch)}
+                      onDuplicate={() => duplicate(i)}
+                      onRemove={() => remove(i)}
+                      canRemove={rows.length > 1}
+                      required={settings.required}
                       currentUser={user}
                     />
                   ))}
