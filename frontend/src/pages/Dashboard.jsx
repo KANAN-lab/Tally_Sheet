@@ -5,6 +5,7 @@ import StatCard from "@/components/StatCard";
 import StatusDonut from "@/components/StatusDonut";
 import TallyTable from "@/components/TallyTable";
 import Pager from "@/components/Pager";
+import { DetailSkeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { fmtDateTime, pctChange } from "@/lib/format";
@@ -105,6 +106,10 @@ export default function Dashboard() {
   useEffect(() => {
     load();
   }, [load]);
+
+  if (!stats) {
+    return <DetailSkeleton />;
+  }
 
   const s = stats || {};
   const last = s.last_master;

@@ -19,6 +19,11 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 import requests
 
+try:
+    from domain import WorkflowManager, SettingsService, DEFAULT_HOLD_CATEGORIES, DEFAULT_WORKFLOW_STAGES
+except ImportError:
+    from backend.domain import WorkflowManager, SettingsService, DEFAULT_HOLD_CATEGORIES, DEFAULT_WORKFLOW_STAGES
+
 # Constants
 SECRET_KEY = os.environ.get("SECRET_KEY", "tally_secret_key_production_grade_jwt_token")
 ALGORITHM = "HS256"
@@ -67,27 +72,44 @@ def sync_from_supabase_if_needed(conn, sheet_id: str = None):
                     conn.execute("""
                         INSERT INTO tally_sheets 
                         (id, doc_no, status, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at,
-                         finalized_at, finalized_by, finalized_by_name, cancelled_at, cancelled_by, cancelled_by_name, cancel_reason)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         finalized_at, finalized_by, finalized_by_name, cancelled_at, cancelled_by, cancelled_by_name, cancel_reason,
+                         delivery_note_no, po_no, supplier_code, supplier_name, arrival_date, driver_name, truck_plate,
+                         current_handler_role, current_handler_name, pending_reason, pending_category, qc_status, qc_notes, qc_by_name, qc_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         s["id"], s["doc_no"], s["status"], s["created_by"], s["created_by_name"],
                         s["created_at"], s["updated_by"], s["updated_by_name"], s["updated_at"],
                         s.get("finalized_at"), s.get("finalized_by"), s.get("finalized_by_name"),
                         s.get("cancelled_at"), s.get("cancelled_by"), s.get("cancelled_by_name"),
-                        s.get("cancel_reason")
+                        s.get("cancel_reason"),
+                        s.get("delivery_note_no", ""), s.get("po_no", ""), s.get("supplier_code", ""), s.get("supplier_name", ""),
+                        s.get("arrival_date", ""), s.get("driver_name", ""), s.get("truck_plate", ""),
+                        s.get("current_handler_role", "admin"), s.get("current_handler_name", ""),
+                        s.get("pending_reason", ""), s.get("pending_category", ""),
+                        s.get("qc_status", ""), s.get("qc_notes", ""), s.get("qc_by_name", ""), s.get("qc_at")
                     ))
                 else:
                     conn.execute("""
                         UPDATE tally_sheets 
                         SET status = ?, updated_by = ?, updated_by_name = ?, updated_at = ?,
                             finalized_at = ?, finalized_by = ?, finalized_by_name = ?,
-                            cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ?, cancel_reason = ?
+                            cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ?, cancel_reason = ?,
+                            delivery_note_no = ?, po_no = ?, supplier_code = ?, supplier_name = ?,
+                            arrival_date = ?, driver_name = ?, truck_plate = ?,
+                            current_handler_role = ?, current_handler_name = ?,
+                            pending_reason = ?, pending_category = ?, qc_status = ?, qc_notes = ?, qc_by_name = ?, qc_at = ?
                         WHERE id = ?
                     """, (
                         s["status"], s["updated_by"], s["updated_by_name"], s["updated_at"],
                         s.get("finalized_at"), s.get("finalized_by"), s.get("finalized_by_name"),
                         s.get("cancelled_at"), s.get("cancelled_by"), s.get("cancelled_by_name"),
-                        s.get("cancel_reason"), s["id"]
+                        s.get("cancel_reason"),
+                        s.get("delivery_note_no", ""), s.get("po_no", ""), s.get("supplier_code", ""), s.get("supplier_name", ""),
+                        s.get("arrival_date", ""), s.get("driver_name", ""), s.get("truck_plate", ""),
+                        s.get("current_handler_role", "admin"), s.get("current_handler_name", ""),
+                        s.get("pending_reason", ""), s.get("pending_category", ""),
+                        s.get("qc_status", ""), s.get("qc_notes", ""), s.get("qc_by_name", ""), s.get("qc_at"),
+                        s["id"]
                     ))
 
                 items = s.get("tally_items") or []
@@ -361,13 +383,21 @@ def init_db():
     except Exception as e:
         print("Notice: Error loading seed suppliers:", e)
 
+    # Ensure columns exist in settings
+    try:
+        set_cols = [col[1] for col in c.execute("PRAGMA table_info(settings)").fetchall()]
+        if "hold_categories_json" not in set_cols:
+            c.execute("ALTER TABLE settings ADD COLUMN hold_categories_json TEXT DEFAULT '[]'")
+    except Exception as e:
+        print("Notice: check settings columns:", e)
+
     # Seed Default Settings if not exists
     cur = c.execute("SELECT id FROM settings WHERE id = 'global'")
     if not cur.fetchone():
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         c.execute("""
-            INSERT INTO settings (id, required_json, duplicate_rule, updated_at, updated_by_name)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO settings (id, required_json, duplicate_rule, hold_categories_json, updated_at, updated_by_name)
+            VALUES (?, ?, ?, ?, ?, ?)
         """, (
             "global",
             json.dumps({
@@ -378,65 +408,27 @@ def init_db():
                 "pic": True
             }),
             "within_document",
+            json.dumps(DEFAULT_HOLD_CATEGORIES),
             now,
             "Ade Iksan Ramdani"
         ))
 
     # Seed Default Users
-    cur = c.execute("SELECT id FROM users WHERE email = 'admin@tally.com'")
-    if not cur.fetchone():
-        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        c.execute("""
-            INSERT INTO users (id, email, name, password_hash, role, is_pic, active, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            "0957b49d-67b9-437a-8d63-18cc1274def3",
-            "admin@tally.com",
-            "Administrator",
-            hash_password("Admin123!"),
-            "admin",
-            1,
-            1,
-            now
-        ))
-        c.execute("""
-            INSERT INTO users (id, email, name, password_hash, role, is_pic, active, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            "663aa1ce-82f6-428f-8f3d-9fe4e135a2b1",
-            "adeiksanr@gmail.com",
-            "Ade Iksan Ramdani",
-            hash_password("Admin123!"),
-            "admin",
-            1,
-            1,
-            now
-        ))
-        c.execute("""
-            INSERT INTO users (id, email, name, password_hash, role, is_pic, active, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            "9707715a-10b7-498c-94c8-276ab935f5dd",
-            "azes@tally.com",
-            "Azes",
-            hash_password("Admin123!"),
-            "user",
-            1,
-            1,
-            now
-        ))
-
-        # Seed Workflow Roles (Checker, QC, Warehouse Admin)
-        for u_id, u_email, u_name, u_role in [
-            ("c1111111-1111-4111-8111-111111111111", "checker@tally.com", "Budi Checker", "checker"),
-            ("q2222222-2222-4222-8222-222222222222", "qc@tally.com", "Rina QC Inspector", "qc"),
-            ("w3333333-3333-4333-8333-333333333333", "warehouse@tally.com", "Hendra Admin WH", "warehouse_admin"),
-        ]:
-            if not c.execute("SELECT id FROM users WHERE email = ?", (u_email,)).fetchone():
-                c.execute("""
-                    INSERT INTO users (id, email, name, password_hash, role, is_pic, active, created_at)
-                    VALUES (?, ?, ?, ?, ?, 1, 1, ?)
-                """, (u_id, u_email, u_name, hash_password("Admin123!"), u_role, now))
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    default_users = [
+        ("0957b49d-67b9-437a-8d63-18cc1274def3", "admin@tally.com", "Administrator", "admin"),
+        ("663aa1ce-82f6-428f-8f3d-9fe4e135a2b1", "adeiksanr@gmail.com", "Ade Iksan Ramdani", "admin"),
+        ("9707715a-10b7-498c-94c8-276ab935f5dd", "azes@tally.com", "Azes", "user"),
+        ("c1111111-1111-4111-8111-111111111111", "checker@tally.com", "Budi Checker", "checker"),
+        ("q2222222-2222-4222-8222-222222222222", "qc@tally.com", "Rina QC Inspector", "qc"),
+        ("w3333333-3333-4333-8333-333333333333", "warehouse@tally.com", "Hendra Admin WH", "warehouse_admin")
+    ]
+    for u_id, u_email, u_name, u_role in default_users:
+        if not c.execute("SELECT id FROM users WHERE email = ?", (u_email,)).fetchone():
+            c.execute("""
+                INSERT INTO users (id, email, name, password_hash, role, is_pic, active, created_at)
+                VALUES (?, ?, ?, ?, ?, 1, 1, ?)
+            """, (u_id, u_email, u_name, hash_password("Admin123!"), u_role, now))
 
     # Seed materials from dump if empty
     cur = c.execute("SELECT count(*) FROM materials")
@@ -664,42 +656,25 @@ def update_user(user_id: str, req: UpdateUserRequest, admin: dict = Depends(requ
 @app.get("/api/settings")
 def get_settings():
     conn = get_db()
-    row = conn.execute("SELECT * FROM settings WHERE id = 'global'").fetchone()
+    res = SettingsService.get_settings(conn)
     conn.close()
-    if not row:
-        return {"id": "global", "required": {}, "duplicate_rule": "within_document", "updated_at": "", "updated_by_name": ""}
-    return {
-        "id": "global",
-        "required": json.loads(row["required_json"]),
-        "duplicate_rule": row["duplicate_rule"],
-        "updated_at": row["updated_at"],
-        "updated_by_name": row["updated_by_name"]
-    }
+    return res
 
 class SettingsRequest(BaseModel):
     required: Dict[str, bool]
     duplicate_rule: str
+    hold_categories: Optional[List[str]] = None
 
 @app.put("/api/settings")
 def update_settings(req: SettingsRequest, admin: dict = Depends(require_admin)):
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     conn = get_db()
-    conn.execute("""
-        UPDATE settings SET required_json = ?, duplicate_rule = ?, updated_at = ?, updated_by_name = ?
-        WHERE id = 'global'
-    """, (json.dumps(req.required), req.duplicate_rule, now, admin["name"]))
+    res = SettingsService.update_settings(conn, req.required, req.duplicate_rule, req.hold_categories or DEFAULT_HOLD_CATEGORIES, admin["name"])
     conn.commit()
     conn.close()
     
     req_str = ", ".join([k for k, v in req.required.items() if v])
-    log_activity(admin["id"], admin["name"], "update_settings", "settings", "global", f"Kolom wajib: {req_str}; aturan duplikat: {req.duplicate_rule}")
-    return {
-        "id": "global",
-        "required": req.required,
-        "duplicate_rule": req.duplicate_rule,
-        "updated_at": now,
-        "updated_by_name": admin["name"]
-    }
+    log_activity(admin["id"], admin["name"], "update_settings", "settings", "global", f"Kolom wajib: {req_str}; aturan duplikat: {req.duplicate_rule}; {len(res['hold_categories'])} kategori hold")
+    return res
 
 # ----------------- DASHBOARD -----------------
 @app.get("/api/dashboard")
@@ -1726,169 +1701,31 @@ def transition_tally_sheet(sheet_id: str, req: WorkflowTransitionInput, user: di
         conn.close()
         raise HTTPException(status_code=400, detail="Dokumen sudah selesai (GR Posted) dan terkunci.")
 
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    old_status = sheet["status"]
-    actual_id = sheet["id"]
     action = req.action.strip()
-
-    new_status = old_status
-    new_handler_role = sheet["current_handler_role"] or "admin"
-    new_handler_name = ""
-    pending_cat = ""
-    pending_rsn = ""
-    qc_stat = sheet["qc_status"] or ""
-    qc_nts = sheet["qc_notes"] or ""
-    qc_by = sheet["qc_by_name"] or ""
-    qc_at = sheet["qc_at"] or None
-    gr_num = sheet["gr_no"] or ""
-    gr_by = sheet["gr_by_name"] or ""
-    gr_at = sheet["gr_at"] or None
-    gr_nts = sheet["gr_notes"] or ""
-    finalized_at = sheet["finalized_at"]
-    finalized_by = sheet["finalized_by"]
-    finalized_by_name = sheet["finalized_by_name"]
-
-    log_detail = ""
-
-    if action == "submit_to_admin":
-        new_status = "waiting_admin_1"
-        new_handler_role = "admin"
-        log_detail = f"Dokumen diserahkan ke Admin Warehouse oleh {user['name']}"
-
-    elif action == "admin_hold":
-        if not req.reason.strip():
-            raise HTTPException(status_code=400, detail="Alasan penahanan dokumen (Hold Reason) wajib diisi.")
-        new_status = "admin_hold"
-        new_handler_role = "admin"
-        pending_cat = req.category.strip() or "Administrasi / PO"
-        pending_rsn = req.reason.strip()
-        log_detail = f"Admin menahan dokumen: [{pending_cat}] {pending_rsn}"
-
-    elif action == "send_to_qc":
-        new_status = "waiting_qc"
-        new_handler_role = "qc"
-        log_detail = f"Admin Warehouse meneruskan dokumen ke QC untuk sampling/inspeksi"
-
-    elif action == "qc_hold":
-        if not req.reason.strip():
-            raise HTTPException(status_code=400, detail="Alasan penahanan QC (COA/Lab/Issue) wajib diisi.")
-        new_status = "qc_hold"
-        new_handler_role = "qc"
-        pending_cat = req.category.strip() or "QC Issue / COA"
-        pending_rsn = req.reason.strip()
-        log_detail = f"QC menahan dokumen: [{pending_cat}] {pending_rsn}"
-
-    elif action == "qc_approve":
-        new_status = "waiting_gr"
-        new_handler_role = "admin"
-        qc_stat = "passed"
-        qc_nts = req.qc_notes.strip() or req.reason.strip() or "Lolos uji kualitas (QC Approved)"
-        qc_by = user["name"]
-        qc_at = now
-        log_detail = f"QC menyetujui material (Lolos QC): {qc_nts}"
-
-    elif action == "qc_reject":
-        if not req.reason.strip():
-            raise HTTPException(status_code=400, detail="Alasan penolakan QC wajib diisi.")
-        new_status = "qc_rejected"
-        new_handler_role = "admin"
-        qc_stat = "rejected"
-        qc_nts = req.reason.strip()
-        qc_by = user["name"]
-        qc_at = now
-        pending_cat = req.category.strip() or "QC Reject"
-        pending_rsn = req.reason.strip()
-        log_detail = f"QC menolak material (Reject): {pending_rsn}"
-
-    elif action == "admin_gr_hold":
-        if not req.reason.strip():
-            raise HTTPException(status_code=400, detail="Alasan penundaan GR wajib diisi.")
-        new_status = "gr_hold"
-        new_handler_role = "admin"
-        pending_cat = req.category.strip() or "Kendala Posting GR"
-        pending_rsn = req.reason.strip()
-        log_detail = f"Admin menunda GR: [{pending_cat}] {pending_rsn}"
-
-    elif action == "post_gr":
-        if not req.gr_no.strip():
-            raise HTTPException(status_code=400, detail="Nomor Material Document GR SAP wajib diisi.")
-        new_status = "completed"
-        new_handler_role = "closed"
-        gr_num = req.gr_no.strip()
-        gr_by = user["name"]
-        gr_at = now
-        gr_nts = req.reason.strip()
-        finalized_at = now
-        finalized_by = user["id"]
-        finalized_by_name = user["name"]
-        log_detail = f"Admin memposting Goods Receipt SAP No. {gr_num}"
-
-    elif action == "return_to_checker":
-        if not req.reason.strip():
-            raise HTTPException(status_code=400, detail="Alasan pengembalian ke Checker wajib diisi.")
-        new_status = "draft"
-        new_handler_role = "checker"
-        pending_cat = req.category.strip() or "Revisi Fisik / Kuantiti"
-        pending_rsn = req.reason.strip()
-        log_detail = f"Admin mengembalikan dokumen ke Checker untuk revisi: {pending_rsn}"
-
-    else:
-        raise HTTPException(status_code=400, detail=f"Aksi transisi '{action}' tidak dikenal.")
-
-    conn.execute("""
-        UPDATE tally_sheets
-        SET status = ?, current_handler_role = ?, current_handler_name = ?,
-            pending_category = ?, pending_reason = ?,
-            qc_status = ?, qc_notes = ?, qc_by_name = ?, qc_at = ?,
-            gr_no = ?, gr_by_name = ?, gr_at = ?, gr_notes = ?,
-            finalized_at = ?, finalized_by = ?, finalized_by_name = ?,
-            updated_at = ?, updated_by = ?, updated_by_name = ?
-        WHERE id = ?
-    """, (
-        new_status, new_handler_role, new_handler_name,
-        pending_cat, pending_rsn,
-        qc_stat, qc_nts, qc_by, qc_at,
-        gr_num, gr_by, gr_at, gr_nts,
-        finalized_at, finalized_by, finalized_by_name,
-        now, user["id"], user["name"],
-        actual_id
-    ))
-
-    rev_count = conn.execute("SELECT count(*) FROM tally_history WHERE sheet_id = ?", (actual_id,)).fetchone()[0] or 1
-    hist_id = str(uuid.uuid4())
-    conn.execute("""
-        INSERT INTO tally_history 
-        (id, sheet_id, action, revision, at, by_name, by_id, by_role, from_status, to_status, category, reason)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        hist_id, actual_id, action, rev_count + 1, now, user["name"], user["id"], user.get("role", "admin"),
-        old_status, new_status, req.category.strip(), req.reason.strip() or log_detail
-    ))
-
+    res = WorkflowManager.execute_transition(conn, dict(sheet), action, req.dict(), user)
     conn.commit()
     conn.close()
 
-    # Sync to Supabase
+    # Sync transition to Supabase
     sync_tally_to_supabase({
-        "id": actual_id, "doc_no": sheet["doc_no"], "status": new_status,
-        "current_handler_role": new_handler_role, "current_handler_name": new_handler_name,
-        "pending_category": pending_cat, "pending_reason": pending_rsn,
-        "qc_status": qc_stat, "qc_notes": qc_nts, "qc_by_name": qc_by, "qc_at": qc_at,
-        "gr_no": gr_num, "gr_by_name": gr_by, "gr_at": gr_at, "gr_notes": gr_nts,
-        "finalized_at": finalized_at, "finalized_by": finalized_by, "finalized_by_name": finalized_by_name,
-        "updated_at": now, "updated_by": user["id"], "updated_by_name": user["name"]
+        "id": res["actual_id"], "doc_no": res["doc_no"], "status": res["new_status"],
+        "current_handler_role": res["new_handler_role"], "current_handler_name": res["new_handler_name"],
+        "pending_category": res["pending_category"], "pending_reason": res["pending_reason"],
+        "qc_status": res["qc_status"], "qc_notes": res["qc_notes"], "qc_by_name": res["qc_by_name"], "qc_at": res["qc_at"],
+        "finalized_at": res["finalized_at"], "finalized_by": res["finalized_by"], "finalized_by_name": res["finalized_by_name"],
+        "updated_at": res["updated_at"], "updated_by": res["updated_by"], "updated_by_name": res["updated_by_name"]
     }, None, {
-        "id": hist_id, "sheet_id": actual_id, "action": action, "revision": rev_count + 1,
-        "at": now, "by_name": user["name"], "by_id": user["id"], "by_role": user.get("role", "admin"),
-        "from_status": old_status, "to_status": new_status, "category": req.category.strip(), "reason": req.reason.strip() or log_detail
+        "id": res["hist_id"], "sheet_id": res["actual_id"], "action": action, "revision": res["revision"],
+        "at": res["updated_at"], "by_name": user["name"], "by_id": user["id"], "by_role": user.get("role", "admin"),
+        "from_status": res["old_status"], "to_status": res["new_status"], "category": res["pending_category"], "reason": res["pending_reason"] or res["log_detail"]
     })
 
-    log_activity(user["id"], user["name"], f"transition_{action}", "tally_sheet", actual_id, log_detail)
+    log_activity(user["id"], user["name"], f"transition_{action}", "tally_sheet", res["actual_id"], res["log_detail"])
 
     return {
-        "message": f"Dokumen berhasil diperbarui ke status '{new_status}'",
-        "status": new_status,
-        "current_handler_role": new_handler_role
+        "message": f"Dokumen berhasil diperbarui ke status '{res['new_status']}'",
+        "status": res["new_status"],
+        "current_handler_role": res["new_handler_role"]
     }
 
 class CancelRequest(BaseModel):

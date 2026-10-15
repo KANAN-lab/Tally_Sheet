@@ -9,6 +9,8 @@ import TallyTable from "@/components/TallyTable";
 import Pager from "@/components/Pager";
 import { api } from "@/lib/api";
 
+import { TableSkeleton } from "@/components/ui/skeleton";
+
 const LIMIT = 15;
 const EMPTY = { q: "", date: "", material: "", pic: "", status: "all" };
 
@@ -18,10 +20,14 @@ export default function TallyList() {
   const [applied, setApplied] = useState(EMPTY);
   const [page, setPage] = useState(1);
   const [data, setData] = useState({ items: [], total: 0 });
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(() => {
+    setLoading(true);
     const params = { ...applied, status: applied.status === "all" ? "" : applied.status, page, limit: LIMIT };
-    api.get("/tally-sheets", { params }).then((r) => setData(r.data));
+    api.get("/tally-sheets", { params })
+      .then((r) => setData(r.data))
+      .finally(() => setLoading(false));
   }, [applied, page]);
   useEffect(() => {
     load();
@@ -59,14 +65,12 @@ export default function TallyList() {
           <SelectContent>
             <SelectItem value="all">Semua Status</SelectItem>
             <SelectItem value="draft">Draft (Checker)</SelectItem>
-            <SelectItem value="waiting_admin_1">Menunggu Admin WH</SelectItem>
+            <SelectItem value="waiting_admin">Menunggu Admin WH</SelectItem>
             <SelectItem value="admin_hold">Pending Admin WH</SelectItem>
-            <SelectItem value="waiting_qc">Dalam QC</SelectItem>
-            <SelectItem value="qc_hold">Pending QC (COA/Lab)</SelectItem>
+            <SelectItem value="waiting_qc">Dalam Pemeriksaan QC</SelectItem>
+            <SelectItem value="qc_hold">Pending QC (Pemeriksaan)</SelectItem>
             <SelectItem value="qc_rejected">Ditolak QC</SelectItem>
-            <SelectItem value="waiting_gr">Siap Posting GR</SelectItem>
-            <SelectItem value="gr_hold">Pending Posting GR</SelectItem>
-            <SelectItem value="completed">Selesai (GR Posted)</SelectItem>
+            <SelectItem value="completed">Selesai (Stock Ter-UU)</SelectItem>
             <SelectItem value="cancelled">Dibatalkan</SelectItem>
           </SelectContent>
         </Select>
@@ -76,8 +80,14 @@ export default function TallyList() {
         </div>
       </form>
       <div className="rounded-xl border bg-white p-4 shadow-sm">
-        <TallyTable items={data.items} startIndex={(page - 1) * LIMIT} onChanged={load} extended testId="tally-list-table" />
-        <Pager page={page} total={data.total} limit={LIMIT} onChange={setPage} testId="tally-list-pager" />
+        {loading ? (
+          <TableSkeleton rows={5} cols={7} />
+        ) : (
+          <>
+            <TallyTable items={data.items} startIndex={(page - 1) * LIMIT} onChanged={load} extended testId="tally-list-table" />
+            <Pager page={page} total={data.total} limit={LIMIT} onChange={setPage} testId="tally-list-pager" />
+          </>
+        )}
       </div>
     </div>
   );

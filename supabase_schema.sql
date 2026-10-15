@@ -22,9 +22,11 @@ CREATE TABLE IF NOT EXISTS public.settings (
     id TEXT PRIMARY KEY,
     required_json TEXT NOT NULL,
     duplicate_rule TEXT NOT NULL,
+    hold_categories_json TEXT DEFAULT '[]',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
     updated_by_name TEXT NOT NULL
 );
+ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS hold_categories_json TEXT DEFAULT '[]';
 
 -- 3. MASTER VERSIONS TABLE
 CREATE TABLE IF NOT EXISTS public.master_versions (
