@@ -41,9 +41,11 @@ export default function TallyPrint() {
           <table className="text-[11px]">
             <tbody>
               <tr><td className="pr-3 font-semibold">No. Dokumen</td><td data-testid="print-doc-no">: {sheet.doc_no}</td></tr>
-              <tr><td className="pr-3 font-semibold">Tanggal Pembuatan</td><td>: {fmtDateTime(sheet.created_at)}</td></tr>
-              <tr><td className="pr-3 font-semibold">Status</td><td>: {sheet.status.toUpperCase()}</td></tr>
-              <tr><td className="pr-3 font-semibold">PIC</td><td>: {sheet.pic_names?.join(", ") || "-"}</td></tr>
+              <tr><td className="pr-3 font-semibold">No. Surat Jalan (SJ)</td><td>: <span className="font-mono font-bold">{sheet.delivery_note_no || "-"}</span></td></tr>
+              <tr><td className="pr-3 font-semibold">No. PO SAP</td><td>: <span className="font-mono font-bold">{sheet.po_no || "-"}</span></td></tr>
+              <tr><td className="pr-3 font-semibold">Tanggal Kedatangan</td><td>: {sheet.arrival_date ? fmtDate(sheet.arrival_date) : fmtDate(sheet.created_at)}</td></tr>
+              <tr><td className="pr-3 font-semibold">No. Polisi Armada</td><td>: {sheet.truck_plate || "-"}</td></tr>
+              <tr><td className="pr-3 font-semibold">Status</td><td>: <span className="font-bold">{sheet.status === "completed" ? "SELESAI (STOCK TER-UU)" : sheet.status.toUpperCase()}</span></td></tr>
             </tbody>
           </table>
         </div>
@@ -67,14 +69,29 @@ export default function TallyPrint() {
             ))}
           </tbody>
         </table>
-        <div className="mt-2 text-[10px]">Total baris: {sheet.items.length} · Dibuat oleh: {sheet.created_by_name}{sheet.finalized_by_name ? ` · Difinalisasi oleh: ${sheet.finalized_by_name} (${fmtDateTime(sheet.finalized_at)})` : ""}</div>
+        <div className="mt-2 text-[10px]">Total baris: {sheet.items.length} · Dibuat oleh: {sheet.created_by_name}{sheet.admin_by_name ? ` · Diverifikasi oleh: ${sheet.admin_by_name} (${fmtDateTime(sheet.admin_at)})` : ""}{sheet.qc_by_name ? ` · Disetujui QC: ${sheet.qc_by_name} (${fmtDateTime(sheet.qc_at)})` : ""}</div>
         <div className="avoid-break mt-10 grid grid-cols-3 gap-6 text-center text-[11px]" data-testid="print-a4-signature-block">
-          {SIGN.map((s) => (
-            <div key={s}>
-              <div className="font-semibold">{s}</div>
-              <div className="mx-auto mt-16 w-4/5 border-t border-black pt-1">Nama & Tanggal</div>
+          <div>
+            <div className="font-semibold">Checker (Pembuat)</div>
+            <div className="mx-auto mt-14 w-4/5 border-t border-black pt-1">
+              <span className="font-medium">{sheet.created_by_name || "Checker"}</span>
+              <div className="text-[10px] text-slate-500">{sheet.created_at ? fmtDate(sheet.created_at) : ""}</div>
             </div>
-          ))}
+          </div>
+          <div>
+            <div className="font-semibold">Admin Warehouse (Verifikasi)</div>
+            <div className="mx-auto mt-14 w-4/5 border-t border-black pt-1">
+              <span className="font-medium">{sheet.admin_by_name || "Admin Warehouse"}</span>
+              <div className="text-[10px] text-slate-500">{sheet.admin_at ? fmtDate(sheet.admin_at) : ""}</div>
+            </div>
+          </div>
+          <div>
+            <div className="font-semibold">Quality Control (Disetujui / Stock UU)</div>
+            <div className="mx-auto mt-14 w-4/5 border-t border-black pt-1">
+              <span className="font-medium">{sheet.qc_by_name || "Quality Control"}</span>
+              <div className="text-[10px] text-slate-500">{sheet.qc_at ? fmtDate(sheet.qc_at) : ""}</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
