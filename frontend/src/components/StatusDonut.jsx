@@ -2,9 +2,11 @@ import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import { PackageCheck } from "lucide-react";
 
 const ITEMS = [
-  { key: "final", label: "Final", color: "#16a34a" },
-  { key: "draft", label: "Draft", color: "#f5b82e" },
-  { key: "cancelled", label: "Cancelled", color: "#ef4444" },
+  { key: "completed", label: "Stock Ter-UU", color: "#10b981" },
+  { key: "waiting_qc", label: "Pemeriksaan QC", color: "#8b5cf6" },
+  { key: "waiting_admin", label: "Verifikasi Admin WH", color: "#3b82f6" },
+  { key: "draft", label: "Draft Checker", color: "#f59e0b" },
+  { key: "cancelled", label: "Dibatalkan", color: "#ef4444" },
 ];
 
 export default function StatusDonut({ counts = {} }) {

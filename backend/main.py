@@ -740,8 +740,12 @@ def get_dashboard():
     drafts_today = conn.execute("SELECT count(*) FROM tally_sheets WHERE status = 'draft' AND created_at LIKE ?", (f"{today_str}%",)).fetchone()[0]
     drafts_yesterday = conn.execute("SELECT count(*) FROM tally_sheets WHERE status = 'draft' AND created_at LIKE ?", (f"{yesterday_str}%",)).fetchone()[0]
 
-    final_count = conn.execute("SELECT count(*) FROM tally_sheets WHERE status = 'final'").fetchone()[0]
-    cancelled_count = conn.execute("SELECT count(*) FROM tally_sheets WHERE status = 'cancelled'").fetchone()[0]
+    completed_count = conn.execute("SELECT count(*) FROM tally_sheets WHERE status IN ('completed', 'final', 'waiting_gr')").fetchone()[0]
+    qc_count = conn.execute("SELECT count(*) FROM tally_sheets WHERE status IN ('waiting_qc', 'qc_hold')").fetchone()[0]
+    admin_count = conn.execute("SELECT count(*) FROM tally_sheets WHERE status IN ('waiting_admin', 'waiting_admin_1', 'admin_hold')").fetchone()[0]
+    drafts_count = conn.execute("SELECT count(*) FROM tally_sheets WHERE status = 'draft'").fetchone()[0]
+    cancelled_count = conn.execute("SELECT count(*) FROM tally_sheets WHERE status IN ('cancelled', 'qc_rejected')").fetchone()[0]
+    in_progress = qc_count + admin_count + drafts_count
 
     last_v = conn.execute("SELECT * FROM master_versions ORDER BY version DESC LIMIT 1").fetchone()
     last_master = None
@@ -775,13 +779,17 @@ def get_dashboard():
         "rows_total": rows_total,
         "rows_this_month": rows_this_month,
         "rows_last_month": rows_last_month,
-        "drafts": drafts,
+        "in_progress": in_progress,
+        "drafts": in_progress,
         "drafts_today": drafts_today,
         "drafts_yesterday": drafts_yesterday,
         "status_counts": {
-            "final": final_count,
-            "draft": drafts,
-            "cancelled": cancelled_count
+            "completed": completed_count,
+            "waiting_qc": qc_count,
+            "waiting_admin": admin_count,
+            "draft": drafts_count,
+            "cancelled": cancelled_count,
+            "final": completed_count
         },
         "last_master": last_master,
         "materials_active": materials_active

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, CalendarDays, CalendarClock, ClipboardPlus, CloudUpload, Database, FileText, History, Info, Layers, PlusCircle, Settings, Upload, Zap, Clock3 } from "lucide-react";
+import { ArrowRight, CalendarDays, CalendarClock, ClipboardPlus, FileText, History, Layers, PlusCircle, Settings, Zap, Clock3 } from "lucide-react";
 import StatCard from "@/components/StatCard";
 import StatusDonut from "@/components/StatusDonut";
 import TallyTable from "@/components/TallyTable";
@@ -33,10 +33,10 @@ function Clock() {
 
 function QuickActions({ isAdmin }) {
   const items = [
-    { to: "/tally/new", icon: ClipboardPlus, title: "Buat Tally Sheet Baru", desc: "Mulai membuat tally sheet baru", id: "new" },
-    { to: "/master/upload", icon: Upload, title: "Upload Master Data", desc: "Update data material harian", admin: true, id: "upload" },
-    { to: isAdmin ? "/activity" : "/tally", icon: History, title: "Lihat Riwayat", desc: "Lihat semua riwayat tally sheet", id: "history" },
-    { to: "/settings", icon: Settings, title: "Pengaturan", desc: "Atur aturan validasi sistem", admin: true, id: "settings" },
+    { to: "/tally/new", icon: ClipboardPlus, title: "Buat Tally Sheet Baru", desc: "Mulai input tally fisik baru", id: "new" },
+    { to: "/tally", icon: Layers, title: "Daftar Tally Sheet", desc: "Kelola status dan workflow", id: "list" },
+    { to: isAdmin ? "/activity" : "/tally", icon: History, title: "Riwayat Aktivitas", desc: "Log aktivitas & audit trail", id: "history" },
+    { to: "/settings", icon: Settings, title: "Pengaturan Alur", desc: "Aturan validasi & workflow", admin: true, id: "settings" },
   ].filter((i) => !i.admin || isAdmin);
   return (
     <div className="rounded-xl border bg-white p-5 shadow-sm" data-testid="dashboard-quick-actions">
@@ -49,27 +49,6 @@ function QuickActions({ isAdmin }) {
           </Link>
         ))}
       </div>
-    </div>
-  );
-}
-
-function LastUpload({ last, isAdmin }) {
-  return (
-    <div className="rounded-xl border bg-white p-5 shadow-sm" data-testid="dashboard-last-upload">
-      <div className="flex items-center gap-2 font-display font-bold text-[#0B2149]"><Database className="h-5 w-5" /> Upload Master Data Terakhir</div>
-      {last ? (
-        <dl className="mt-4 grid grid-cols-[90px_1fr] gap-y-2 text-sm">
-          <dt className="text-slate-500">Tanggal</dt><dd className="font-medium text-slate-900">{fmtDateTime(last.uploaded_at)}</dd>
-          <dt className="text-slate-500">Oleh</dt><dd className="font-medium text-slate-900">{last.uploaded_by_name}</dd>
-          <dt className="text-slate-500">Metode</dt><dd className="font-medium text-slate-900">{MODE[last.mode]}</dd>
-          <dt className="text-slate-500">Versi</dt><dd className="font-medium text-slate-900">v{last.version} · {last.active_total} material aktif</dd>
-        </dl>
-      ) : (
-        <p className="mt-4 text-sm text-slate-500">Belum ada master data yang di-upload.</p>
-      )}
-      <Link to={isAdmin ? "/master/upload" : "/master"} className="mt-4 inline-flex items-center gap-1 rounded-md bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100" data-testid="dashboard-upload-history-link">
-        Lihat Riwayat Upload <ArrowRight className="h-3.5 w-3.5" />
-      </Link>
     </div>
   );
 }
@@ -124,33 +103,34 @@ export default function Dashboard() {
         <Clock />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard testId="dashboard-stat-total-tally" icon={FileText} color="bg-blue-600" label="Total Tally Sheet" value={s.total ?? "-"} change={stats ? pctChange(s.total_this_month, s.total_last_month) : undefined} caption="Bulan ini dibanding bulan lalu" />
         <StatCard testId="dashboard-stat-today-tally" delay={50} icon={CalendarClock} color="bg-emerald-600" label="Tally Sheet Hari Ini" value={s.today ?? "-"} change={stats ? pctChange(s.today, s.yesterday) : undefined} caption="Dibanding kemarin" />
         <StatCard testId="dashboard-stat-total-rows" delay={100} icon={Layers} color="bg-violet-600" label="Total Baris Material" value={s.rows_total ?? "-"} change={stats ? pctChange(s.rows_this_month, s.rows_last_month) : undefined} caption="Bulan ini dibanding bulan lalu" />
-        <StatCard testId="dashboard-stat-draft-tally" delay={150} icon={Clock3} color="bg-orange-500" label="Draft Belum Selesai" value={s.drafts ?? "-"} change={stats ? pctChange(s.drafts_today, s.drafts_yesterday) : undefined} caption="Draft baru dibanding kemarin" />
-        <StatCard testId="dashboard-stat-last-master" delay={200} icon={CloudUpload} color="bg-teal-500" label="Master Data Terakhir" small value={last ? fmtDateTime(last.uploaded_at) : "Belum ada"} sub={last ? `Oleh: ${last.uploaded_by_name}` : ""} />
+        <StatCard testId="dashboard-stat-draft-tally" delay={150} icon={Clock3} color="bg-amber-500" label="Antrean & Dalam Proses" value={s.in_progress ?? s.drafts ?? "-"} change={stats ? pctChange(s.drafts_today, s.drafts_yesterday) : undefined} caption="Perlu verifikasi Admin/QC" />
       </div>
 
       <div className="mt-6 grid grid-cols-1 xl:grid-cols-[1fr_330px] gap-6">
         <div className="space-y-6 min-w-0">
-          <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1.1fr] gap-4">
-            <button onClick={() => navigate("/tally/new")} className="group flex items-center gap-3 rounded-xl bg-blue-700 px-5 py-5 text-left text-white shadow-md shadow-blue-700/25 hover:bg-blue-800 transition-colors" data-testid="dashboard-create-tally-button">
-              <PlusCircle className="h-7 w-7" />
-              <span className="flex-1 font-semibold">Buat Tally Sheet Baru</span>
-              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-            </button>
-            <button onClick={() => navigate("/master")} className="group flex items-center gap-3 rounded-xl border-2 border-slate-200 bg-white px-5 py-4 text-left hover:border-blue-600 transition-colors" data-testid="dashboard-view-master-button">
-              <Database className="h-7 w-7 text-blue-700" />
-              <span className="flex-1"><span className="block font-semibold text-[#0B2149]">Master Data Hub</span><span className="text-xs text-slate-500">Material & Supplier MKVZ</span></span>
-              <ArrowRight className="h-4 w-4 text-[#0B2149] transition-transform group-hover:translate-x-1" />
-            </button>
-            <div className="flex gap-3 rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-4" data-testid="dashboard-info-box">
-              <Info className="h-5 w-5 shrink-0 text-blue-700 mt-0.5" />
-              <div><div className="text-sm font-semibold text-[#0B2149]">Informasi Master</div>
-                <p className="text-xs text-slate-600 mt-1">{last ? `Data material terakhir diupload pada ${fmtDateTime(last.uploaded_at)} oleh ${last.uploaded_by_name}.` : "Master data material & supplier siap digunakan."}</p>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-2xl bg-gradient-to-r from-[#0B2149] via-[#0f2c61] to-blue-800 p-5 sm:p-6 text-white shadow-sm">
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-2 rounded-full bg-blue-500/20 px-3 py-1 text-xs font-semibold text-blue-200 border border-blue-400/30">
+                <ClipboardPlus className="h-3.5 w-3.5" /> Kedatangan Barang Fisik
               </div>
+              <h2 className="text-lg sm:text-xl font-bold font-display">Pencatatan Tally Sheet Kedatangan</h2>
+              <p className="text-xs sm:text-sm text-blue-100/80 max-w-xl">
+                Lakukan pencatatan penerimaan fisik dari vendor, validasi Surat Jalan & PO SAP, lalu teruskan ke alur verifikasi (Checker → Admin WH → QC).
+              </p>
             </div>
+            <button
+              onClick={() => navigate("/tally/new")}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-bold text-[#0B2149] shadow-sm hover:bg-blue-50 active:scale-98 transition-all shrink-0"
+              data-testid="dashboard-create-tally-button"
+            >
+              <PlusCircle className="h-5 w-5 text-blue-700" />
+              <span>Buat Tally Sheet Baru</span>
+              <ArrowRight className="h-4 w-4 text-[#0B2149]" />
+            </button>
           </div>
 
           <div className="rounded-xl border bg-white p-5 shadow-sm" data-testid="dashboard-recent-card">
@@ -213,7 +193,6 @@ export default function Dashboard() {
         <div className="space-y-6">
           <QuickActions isAdmin={isAdmin} />
           <StatusDonut counts={s.status_counts} />
-          <LastUpload last={last} isAdmin={isAdmin} />
         </div>
       </div>
     </div>

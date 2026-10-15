@@ -352,7 +352,35 @@ export default function TallyEditor() {
 
       {/* WIZARD STEP NAVIGATION BAR */}
       <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-xs">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        {/* Mobile Stepper Header (< md) */}
+        <div className="md:hidden space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-bold text-[#0B2149]">
+              Langkah {currentStep} dari 3:{" "}
+              <span className="text-blue-700">{WIZARD_STEPS[currentStep - 1]?.title.replace(/^\d+\.\s*/, "")}</span>
+            </span>
+            <span className="text-[11px] font-semibold text-slate-500">
+              {currentStep === 1 ? "Langkah 1" : currentStep === 2 ? "Langkah 2" : "Langkah 3"}
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5 h-1.5">
+            {WIZARD_STEPS.map((s) => (
+              <div
+                key={s.step}
+                className={`rounded-full transition-all ${
+                  s.step < currentStep
+                    ? "bg-emerald-600"
+                    : s.step === currentStep
+                    ? "bg-blue-600"
+                    : "bg-slate-200"
+                }`}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Desktop Stepper Bar (>= md) */}
+        <div className="hidden md:grid md:grid-cols-3 gap-2">
           {WIZARD_STEPS.map((s) => {
             const isCurrent = currentStep === s.step;
             const isDone = currentStep > s.step;
@@ -397,7 +425,7 @@ export default function TallyEditor() {
 
       {/* ================= STEP 1: HEADER SURAT JALAN & PO ================= */}
       {currentStep === 1 && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-6" data-testid="wizard-step-1">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm space-y-6" data-testid="wizard-step-1">
           <div className="border-b border-slate-100 pb-4">
             <h3 className="text-base font-bold text-[#0B2149] flex items-center gap-2">
               <FileText className="h-5 w-5 text-blue-700" /> Langkah 1: Informasi Kedatangan Dokumen
@@ -407,7 +435,7 @@ export default function TallyEditor() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 max-w-3xl">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 max-w-3xl">
             {/* Tanggal Kedatangan (Default Today) */}
             <div>
               <Label className="text-xs font-semibold text-slate-800">Tanggal Kedatangan (Today)</Label>
@@ -462,24 +490,24 @@ export default function TallyEditor() {
 
             {/* PIC Checker */}
             <div className="sm:col-span-2">
-              <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3.5 flex items-center justify-between text-xs">
+              <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
                 <div>
                   <span className="text-slate-600">Checker Bertugas:</span>{" "}
                   <strong className="text-blue-950 font-bold">{user?.name}</strong>{" "}
                   <span className="text-slate-500 font-mono">({user?.email})</span>
                 </div>
-                <span className="rounded bg-white px-2 py-0.5 text-[11px] font-semibold text-blue-700 border border-blue-200">
+                <span className="rounded bg-white px-2 py-0.5 text-[11px] font-semibold text-blue-700 border border-blue-200 self-start sm:self-auto">
                   Terkunci Otomatis (Mandatory PIC)
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+          <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
             <Button
               type="button"
               onClick={handleProceedToStep2}
-              className="bg-blue-700 hover:bg-blue-800 font-semibold text-xs px-5"
+              className="bg-blue-700 hover:bg-blue-800 font-semibold text-xs px-5 w-full sm:w-auto h-10"
               data-testid="btn-step1-next"
             >
               Lanjut ke Input Material Fisik <ArrowRight className="ml-1.5 h-4 w-4" />
@@ -542,9 +570,9 @@ export default function TallyEditor() {
                   <div>No.</div>
                   <div>Kode Material *</div>
                   <div>Nama Material</div>
-                  <div>UOM</div>
                   <div>Supplier (MKVZ)</div>
                   <div>Qty Fisik *</div>
+                  <div>UOM</div>
                   <div>Batch Fisik *</div>
                   <div>Supplier Batch *</div>
                   <div>Expired Date *</div>
@@ -593,12 +621,12 @@ export default function TallyEditor() {
           </div>
 
           {/* Navigation Buttons */}
-          <div className="flex items-center justify-between pt-2">
+          <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 pt-2">
             <Button
               type="button"
               variant="outline"
               onClick={() => setCurrentStep(1)}
-              className="text-xs"
+              className="text-xs w-full sm:w-auto h-10"
               data-testid="btn-step2-prev"
             >
               <ArrowLeft className="mr-1.5 h-4 w-4" /> Kembali ke Header
@@ -607,7 +635,7 @@ export default function TallyEditor() {
             <Button
               type="button"
               onClick={handleProceedToStep3}
-              className="bg-blue-700 hover:bg-blue-800 font-semibold text-xs px-5"
+              className="bg-blue-700 hover:bg-blue-800 font-semibold text-xs px-5 w-full sm:w-auto h-10 shadow-sm"
               data-testid="btn-step2-next"
             >
               Lanjut ke Review & Konfirmasi <ArrowRight className="ml-1.5 h-4 w-4" />
@@ -701,24 +729,24 @@ export default function TallyEditor() {
           </div>
 
           {/* Action Submission Buttons */}
-          <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+          <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <Button
               type="button"
               variant="outline"
               onClick={() => setCurrentStep(2)}
-              className="text-xs"
+              className="text-xs w-full sm:w-auto h-10"
               data-testid="btn-step3-prev"
             >
               <ArrowLeft className="mr-1.5 h-4 w-4" /> Kembali ke Material
             </Button>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
               <Button
                 type="button"
                 variant="outline"
                 disabled={busy}
                 onClick={() => handleSave("draft")}
-                className="text-slate-700 hover:bg-slate-100 text-xs font-semibold"
+                className="text-slate-700 hover:bg-slate-100 text-xs font-semibold w-full sm:w-auto h-10"
                 data-testid="btn-save-draft"
               >
                 <Save className="mr-1.5 h-4 w-4" /> Simpan Draft
@@ -728,7 +756,7 @@ export default function TallyEditor() {
                 type="button"
                 disabled={busy}
                 onClick={() => handleSave("submit_to_admin")}
-                className="bg-blue-700 hover:bg-blue-800 text-xs font-bold px-6 shadow-sm"
+                className="bg-blue-700 hover:bg-blue-800 text-xs font-bold px-6 shadow-sm w-full sm:w-auto h-10"
                 data-testid="btn-submit-admin"
               >
                 <Send className="mr-1.5 h-4 w-4" /> Kirim ke Admin Warehouse

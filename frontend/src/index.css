@@ -63,6 +63,28 @@ h1, h2, h3, h4, .font-display {
     to { opacity: 1; transform: translateY(0); }
 }
 
+/* Date input styling across browsers & mobile devices */
+input[type="date"] {
+    position: relative;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: textfield;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.65;
+    margin: 0;
+    padding: 0 2px;
+    font-size: 14px;
+    filter: invert(0.2);
+    transition: opacity 0.15s ease;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+}
+
 /* Print A4 */
 .print-sheet {
     width: 210mm;
