@@ -309,9 +309,9 @@ export default function TallyEditor() {
 
       <div className="rounded-xl border bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <div className="min-w-[1220px] p-3 lg:p-0 space-y-3 lg:space-y-0">
+          <div className="min-w-[1240px] p-3 lg:p-0 space-y-3 lg:space-y-0">
             <div className={`${GRID} hidden rounded-t-xl bg-[#0B2149] px-2 py-3 text-[11px] font-semibold uppercase tracking-wider text-white`}>
-              <div>No.</div>
+              <div className="text-center">No.</div>
               <div>Kode Material *</div>
               <div>Nama Material</div>
               <div className="text-center">UOM</div>

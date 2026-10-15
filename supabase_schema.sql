@@ -158,6 +158,7 @@ ALTER TABLE public.tally_sheets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tally_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tally_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.suppliers ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Full access users" ON public.users;
 CREATE POLICY "Full access users" ON public.users FOR ALL USING (true);
@@ -170,6 +171,9 @@ CREATE POLICY "Full access master_versions" ON public.master_versions FOR ALL US
 
 DROP POLICY IF EXISTS "Full access materials" ON public.materials;
 CREATE POLICY "Full access materials" ON public.materials FOR ALL USING (true);
+
+DROP POLICY IF EXISTS "Full access suppliers" ON public.suppliers;
+CREATE POLICY "Full access suppliers" ON public.suppliers FOR ALL USING (true);
 
 DROP POLICY IF EXISTS "Full access tally_sheets" ON public.tally_sheets;
 CREATE POLICY "Full access tally_sheets" ON public.tally_sheets FOR ALL USING (true);

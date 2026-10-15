@@ -13,7 +13,7 @@ function FieldError({ msg, testId }) {
 
 function Cell({ label, children, className = "" }) {
   return (
-    <div className={`mb-3 lg:mb-0 ${className}`}>
+    <div className={`mb-3 lg:mb-0 min-w-0 ${className}`}>
       <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500 lg:hidden">{label}</div>
       {children}
     </div>
@@ -40,7 +40,11 @@ export default function TallyRow({
   const req = (f) => (required[f] ? " *" : "");
 
   return (
-    <div className={`${GRID} rounded-lg border bg-white p-3 lg:border-0 lg:border-b lg:rounded-none lg:px-2 lg:py-2.5`} data-testid={`tally-editor-row-item-${index}`}>
+    <div
+      className={`${GRID} relative rounded-lg border bg-white p-3 lg:border-0 lg:border-b lg:rounded-none lg:px-2 lg:py-2.5 transition-colors hover:bg-slate-50/40`}
+      style={{ zIndex: Math.max(1, 40 - index) }}
+      data-testid={`tally-editor-row-item-${index}`}
+    >
       {/* 1. Seq Number */}
       <div className="mb-3 flex items-center justify-between lg:mb-0 lg:block">
         <span className="inline-grid h-9 w-9 place-items-center rounded-md bg-slate-100 font-mono text-xs font-semibold text-slate-700" data-testid={tid("seq")}>
