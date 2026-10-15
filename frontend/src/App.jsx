@@ -53,8 +53,8 @@ function App() {
             <Route path="tally/:id" element={<TallyDetail />} />
             <Route path="tally/:id/edit" element={<TallyEditor />} />
             <Route path="master" element={<MasterData />} />
-            <Route path="master/upload" element={<Protected admin><MasterUpload /></Protected>} />
-            <Route path="suppliers" element={<MasterSupplier />} />
+            <Route path="master/upload" element={<Navigate to="/master?tab=materials&upload=1" replace />} />
+            <Route path="suppliers" element={<Navigate to="/master?tab=suppliers" replace />} />
             <Route path="users" element={<Protected admin><Users /></Protected>} />
             <Route path="activity" element={<Protected admin><Activity /></Protected>} />
             <Route path="settings" element={<Protected admin><Settings /></Protected>} />

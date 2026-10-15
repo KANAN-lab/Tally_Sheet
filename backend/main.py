@@ -17,9 +17,97 @@ import pandas as pd
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
+import requests
+
 # Constants
 SECRET_KEY = os.environ.get("SECRET_KEY", "tally_secret_key_production_grade_jwt_token")
 ALGORITHM = "HS256"
+
+# Supabase Cloud Configuration (Persistent storage across serverless lambdas)
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://jooffdovcomgyvvsftmf.supabase.co").rstrip("/")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impvb2ZmZG92Y29tZ3l2dnNmdG1mIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MjAzMzY4NCwiZXhwIjoyMTA3NjA5Njg0fQ.nq3i0vE-oGJv06i9OGkB8vsTUjVvvmV-1r8FGUOsvk0")
+
+def get_sb_headers():
+    return {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates"
+    }
+
+def sync_tally_to_supabase(sheet_row: dict, items: list = None, history_row: dict = None):
+    if not SUPABASE_KEY or not SUPABASE_URL:
+        return
+    try:
+        requests.post(f"{SUPABASE_URL}/rest/v1/tally_sheets", headers=get_sb_headers(), json=[sheet_row], timeout=4)
+        if items is not None:
+            requests.delete(f"{SUPABASE_URL}/rest/v1/tally_items?sheet_id=eq.{sheet_row['id']}", headers=get_sb_headers(), timeout=4)
+            if items:
+                requests.post(f"{SUPABASE_URL}/rest/v1/tally_items", headers=get_sb_headers(), json=items, timeout=4)
+        if history_row:
+            requests.post(f"{SUPABASE_URL}/rest/v1/tally_history", headers=get_sb_headers(), json=[history_row], timeout=4)
+    except Exception as e:
+        print("Notice: Supabase push warning:", e)
+
+def sync_from_supabase_if_needed(conn, sheet_id: str = None):
+    if not SUPABASE_KEY or not SUPABASE_URL:
+        return
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/tally_sheets?select=*,tally_items(*)"
+        if sheet_id:
+            url += f"&or=(id.eq.{sheet_id},doc_no.eq.{sheet_id})"
+        else:
+            url += "&order=created_at.desc&limit=100"
+        r = requests.get(url, headers=get_sb_headers(), timeout=4)
+        if r.status_code == 200:
+            sheets = r.json()
+            for s in sheets:
+                exists = conn.execute("SELECT id FROM tally_sheets WHERE id = ?", (s["id"],)).fetchone()
+                if not exists:
+                    conn.execute("""
+                        INSERT INTO tally_sheets 
+                        (id, doc_no, status, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at,
+                         finalized_at, finalized_by, finalized_by_name, cancelled_at, cancelled_by, cancelled_by_name, cancel_reason)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        s["id"], s["doc_no"], s["status"], s["created_by"], s["created_by_name"],
+                        s["created_at"], s["updated_by"], s["updated_by_name"], s["updated_at"],
+                        s.get("finalized_at"), s.get("finalized_by"), s.get("finalized_by_name"),
+                        s.get("cancelled_at"), s.get("cancelled_by"), s.get("cancelled_by_name"),
+                        s.get("cancel_reason")
+                    ))
+                else:
+                    conn.execute("""
+                        UPDATE tally_sheets 
+                        SET status = ?, updated_by = ?, updated_by_name = ?, updated_at = ?,
+                            finalized_at = ?, finalized_by = ?, finalized_by_name = ?,
+                            cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ?, cancel_reason = ?
+                        WHERE id = ?
+                    """, (
+                        s["status"], s["updated_by"], s["updated_by_name"], s["updated_at"],
+                        s.get("finalized_at"), s.get("finalized_by"), s.get("finalized_by_name"),
+                        s.get("cancelled_at"), s.get("cancelled_by"), s.get("cancelled_by_name"),
+                        s.get("cancel_reason"), s["id"]
+                    ))
+
+                items = s.get("tally_items") or []
+                if items:
+                    conn.execute("DELETE FROM tally_items WHERE sheet_id = ?", (s["id"],))
+                    for it in items:
+                        conn.execute("""
+                            INSERT INTO tally_items 
+                            (id, sheet_id, seq, material_code, material_name, uom, qty, supplier_code, supplier_name,
+                             batch_fisik, supplier_batch, expired_date, production_date, pic_id, pic_name)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            it["id"], it["sheet_id"], it["seq"], it["material_code"], it["material_name"],
+                            it.get("uom", ""), float(it.get("qty") or 0), it.get("supplier_code", ""), it.get("supplier_name", ""),
+                            it.get("batch_fisik", ""), it.get("supplier_batch", ""), it.get("expired_date", ""),
+                            it.get("production_date", ""), it.get("pic_id", ""), it.get("pic_name", "")
+                        ))
+            conn.commit()
+    except Exception as e:
+        print("Notice: Supabase pull warning:", e)
 
 # Ensure serverless environments (Vercel / Lambda) use writable /tmp
 DB_ORIGIN = Path(__file__).resolve().parent / "tally_sheet.db"
@@ -557,6 +645,7 @@ def update_settings(req: SettingsRequest, admin: dict = Depends(require_admin)):
 @app.get("/api/dashboard")
 def get_dashboard():
     conn = get_db()
+    sync_from_supabase_if_needed(conn)
     total = conn.execute("SELECT count(*) FROM tally_sheets").fetchone()[0]
     today_str = datetime.date.today().isoformat()
     yesterday_str = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
@@ -1153,6 +1242,7 @@ def get_tally_sheets(
     limit: int = 15
 ):
     conn = get_db()
+    sync_from_supabase_if_needed(conn)
     offset = (page - 1) * limit
     where_clauses = ["1=1"]
     params = []
@@ -1241,6 +1331,7 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
     # Fetch users map for pic_name
     u_map = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM users").fetchall()}
 
+    sb_items = []
     for idx, it in enumerate(req.items):
         item_id = str(uuid.uuid4())
         pic_id = it.pic_id or user["id"]
@@ -1257,12 +1348,22 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
             (it.expired_date or "").strip(), (it.production_date or "").strip(),
             pic_id, pic_name
         ))
+        sb_items.append({
+            "id": item_id, "sheet_id": sheet_id, "seq": idx + 1,
+            "material_code": it.material_code.strip(), "material_name": it.material_name.strip(),
+            "uom": (it.uom or "").strip(), "qty": float(it.qty or 0),
+            "supplier_code": (it.supplier_code or "").strip(), "supplier_name": (it.supplier_name or "").strip(),
+            "batch_fisik": (it.batch_fisik or "").strip(), "supplier_batch": (it.supplier_batch or "").strip(),
+            "expired_date": (it.expired_date or "").strip(), "production_date": (it.production_date or "").strip(),
+            "pic_id": pic_id, "pic_name": pic_name
+        })
 
     # History
+    hist_id = str(uuid.uuid4())
     conn.execute("""
         INSERT INTO tally_history (id, sheet_id, action, revision, at, by_name, by_id)
         VALUES (?, ?, 'create', 1, ?, ?, ?)
-    """, (str(uuid.uuid4()), sheet_id, now, user["name"], user["id"]))
+    """, (hist_id, sheet_id, now, user["name"], user["id"]))
 
     if status == "final":
         conn.execute("""
@@ -1273,6 +1374,17 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
     conn.commit()
     conn.close()
 
+    # Sync to Supabase cloud
+    sb_sheet = {
+        "id": sheet_id, "doc_no": doc_no, "status": status,
+        "created_by": user["id"], "created_by_name": user["name"], "created_at": now,
+        "updated_by": user["id"], "updated_by_name": user["name"], "updated_at": now,
+        "finalized_at": now if status == "final" else None,
+        "finalized_by": user["id"] if status == "final" else None,
+        "finalized_by_name": user["name"] if status == "final" else None
+    }
+    sync_tally_to_supabase(sb_sheet, sb_items, {"id": hist_id, "sheet_id": sheet_id, "action": "create", "revision": 1, "at": now, "by_name": user["name"], "by_id": user["id"]})
+
     log_action = "finalize_tally" if status == "final" else "create_tally"
     log_activity(user["id"], user["name"], log_action, "tally_sheet", sheet_id, f"Tally sheet {doc_no} ({status}) dengan {len(req.items)} item")
 
@@ -1281,12 +1393,16 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
 @app.get("/api/tally-sheets/{sheet_id}")
 def get_tally_sheet(sheet_id: str):
     conn = get_db()
-    sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ?", (sheet_id,)).fetchone()
+    sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
+    if not sheet:
+        sync_from_supabase_if_needed(conn, sheet_id=sheet_id)
+        sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
     if not sheet:
         conn.close()
         raise HTTPException(status_code=404, detail="Tally sheet tidak ditemukan.")
     
-    items = conn.execute("SELECT * FROM tally_items WHERE sheet_id = ? ORDER BY seq ASC", (sheet_id,)).fetchall()
+    actual_id = sheet["id"]
+    items = conn.execute("SELECT * FROM tally_items WHERE sheet_id = ? ORDER BY seq ASC", (actual_id,)).fetchall()
     conn.close()
 
     item_list = []
@@ -1367,6 +1483,7 @@ def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends
     conn.execute("DELETE FROM tally_items WHERE sheet_id = ?", (sheet_id,))
     u_map = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM users").fetchall()}
 
+    sb_items = []
     for idx, it in enumerate(req.items):
         item_id = str(uuid.uuid4())
         pic_id = it.pic_id or user["id"]
@@ -1383,19 +1500,39 @@ def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends
             (it.expired_date or "").strip(), (it.production_date or "").strip(),
             pic_id, pic_name
         ))
+        sb_items.append({
+            "id": item_id, "sheet_id": sheet_id, "seq": idx + 1,
+            "material_code": it.material_code.strip(), "material_name": it.material_name.strip(),
+            "uom": (it.uom or "").strip(), "qty": float(it.qty or 0),
+            "supplier_code": (it.supplier_code or "").strip(), "supplier_name": (it.supplier_name or "").strip(),
+            "batch_fisik": (it.batch_fisik or "").strip(), "supplier_batch": (it.supplier_batch or "").strip(),
+            "expired_date": (it.expired_date or "").strip(), "production_date": (it.production_date or "").strip(),
+            "pic_id": pic_id, "pic_name": pic_name
+        })
 
     # Revisions count
     rev_count = conn.execute("SELECT count(*) FROM tally_history WHERE sheet_id = ?", (sheet_id,)).fetchone()[0] or 1
     next_rev = rev_count + 1
 
     action_name = "finalize" if new_status == "final" else "update"
+    hist_id = str(uuid.uuid4())
     conn.execute("""
         INSERT INTO tally_history (id, sheet_id, action, revision, at, by_name, by_id)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (str(uuid.uuid4()), sheet_id, action_name, next_rev, now, user["name"], user["id"]))
+    """, (hist_id, sheet_id, action_name, next_rev, now, user["name"], user["id"]))
 
     conn.commit()
     conn.close()
+
+    # Sync to Supabase
+    sb_sheet = {
+        "id": sheet_id, "doc_no": sheet["doc_no"], "status": new_status,
+        "updated_by": user["id"], "updated_by_name": user["name"], "updated_at": now,
+        "finalized_at": now if new_status == "final" else sheet["finalized_at"],
+        "finalized_by": user["id"] if new_status == "final" else sheet["finalized_by"],
+        "finalized_by_name": user["name"] if new_status == "final" else sheet["finalized_by_name"]
+    }
+    sync_tally_to_supabase(sb_sheet, sb_items, {"id": hist_id, "sheet_id": sheet_id, "action": action_name, "revision": next_rev, "at": now, "by_name": user["name"], "by_id": user["id"]})
 
     log_action = "finalize_tally" if new_status == "final" else "update_tally"
     log_activity(user["id"], user["name"], log_action, "tally_sheet", sheet_id, f"Tally sheet {sheet['doc_no']} ({new_status}) diperbarui")
@@ -1409,6 +1546,9 @@ class CancelRequest(BaseModel):
 def cancel_tally_sheet(sheet_id: str, req: CancelRequest, user: dict = Depends(get_current_user)):
     conn = get_db()
     sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ?", (sheet_id,)).fetchone()
+    if not sheet:
+        sync_from_supabase_if_needed(conn, sheet_id=sheet_id)
+        sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ?", (sheet_id,)).fetchone()
     if not sheet:
         conn.close()
         raise HTTPException(status_code=404, detail="Tally sheet tidak ditemukan.")
@@ -1427,13 +1567,21 @@ def cancel_tally_sheet(sheet_id: str, req: CancelRequest, user: dict = Depends(g
     """, (now, user["id"], user["name"], req.reason.strip(), sheet_id))
 
     rev_count = conn.execute("SELECT count(*) FROM tally_history WHERE sheet_id = ?", (sheet_id,)).fetchone()[0] or 1
+    hist_id = str(uuid.uuid4())
     conn.execute("""
         INSERT INTO tally_history (id, sheet_id, action, revision, at, by_name, by_id)
         VALUES (?, ?, 'cancel', ?, ?, ?, ?)
-    """, (str(uuid.uuid4()), sheet_id, rev_count + 1, now, user["name"], user["id"]))
+    """, (hist_id, sheet_id, rev_count + 1, now, user["name"], user["id"]))
 
     conn.commit()
     conn.close()
+
+    # Sync cancel to Supabase
+    sync_tally_to_supabase({
+        "id": sheet_id, "doc_no": sheet["doc_no"], "status": "cancelled",
+        "cancelled_at": now, "cancelled_by": user["id"], "cancelled_by_name": user["name"],
+        "cancel_reason": req.reason.strip(), "updated_at": now, "updated_by": user["id"], "updated_by_name": user["name"]
+    }, None, {"id": hist_id, "sheet_id": sheet_id, "action": "cancel", "revision": rev_count + 1, "at": now, "by_name": user["name"], "by_id": user["id"]})
 
     log_activity(user["id"], user["name"], "cancel_tally", "tally_sheet", sheet_id, f"Tally sheet {sheet['doc_no']} dibatalkan: {req.reason.strip()}")
     return {"message": "Tally sheet berhasil dibatalkan"}
@@ -1441,7 +1589,9 @@ def cancel_tally_sheet(sheet_id: str, req: CancelRequest, user: dict = Depends(g
 @app.get("/api/tally-sheets/{sheet_id}/history")
 def get_tally_history(sheet_id: str):
     conn = get_db()
-    rows = conn.execute("SELECT * FROM tally_history WHERE sheet_id = ? ORDER BY revision ASC", (sheet_id,)).fetchall()
+    sheet = conn.execute("SELECT id FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
+    actual_id = sheet["id"] if sheet else sheet_id
+    rows = conn.execute("SELECT * FROM tally_history WHERE sheet_id = ? ORDER BY revision ASC", (actual_id,)).fetchall()
     conn.close()
     return [{
         "id": r["id"],
@@ -1457,12 +1607,16 @@ def get_tally_history(sheet_id: str):
 @app.get("/api/tally-sheets/{sheet_id}/export")
 def export_tally_sheet(sheet_id: str):
     conn = get_db()
-    sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ?", (sheet_id,)).fetchone()
+    sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
+    if not sheet:
+        sync_from_supabase_if_needed(conn, sheet_id=sheet_id)
+        sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
     if not sheet:
         conn.close()
         raise HTTPException(status_code=404, detail="Tally sheet tidak ditemukan.")
     
-    items = conn.execute("SELECT * FROM tally_items WHERE sheet_id = ? ORDER BY seq ASC", (sheet_id,)).fetchall()
+    actual_id = sheet["id"]
+    items = conn.execute("SELECT * FROM tally_items WHERE sheet_id = ? ORDER BY seq ASC", (actual_id,)).fetchall()
     conn.close()
 
     wb = openpyxl.Workbook()
