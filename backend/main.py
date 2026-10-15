@@ -132,12 +132,29 @@ def init_db():
         cancel_reason TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS suppliers (
+        id TEXT PRIMARY KEY,
+        code TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        city TEXT DEFAULT '',
+        country TEXT DEFAULT '',
+        postal_code TEXT DEFAULT '',
+        purchasing_org TEXT DEFAULT '',
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS tally_items (
         id TEXT PRIMARY KEY,
         sheet_id TEXT NOT NULL,
         seq INTEGER NOT NULL,
         material_code TEXT NOT NULL,
         material_name TEXT NOT NULL,
+        uom TEXT DEFAULT '',
+        qty REAL DEFAULT 0,
+        supplier_code TEXT DEFAULT '',
+        supplier_name TEXT DEFAULT '',
         batch_fisik TEXT DEFAULT '',
         supplier_batch TEXT DEFAULT '',
         expired_date TEXT DEFAULT '',
@@ -169,6 +186,44 @@ def init_db():
         created_at TEXT NOT NULL
     );
     """)
+
+    # Ensure columns exist in tally_items
+    try:
+        cols = [col[1] for col in c.execute("PRAGMA table_info(tally_items)").fetchall()]
+        for col_name, col_type in [("uom", "TEXT DEFAULT ''"), ("qty", "REAL DEFAULT 0"), ("supplier_code", "TEXT DEFAULT ''"), ("supplier_name", "TEXT DEFAULT ''")]:
+            if col_name not in cols:
+                c.execute(f"ALTER TABLE tally_items ADD COLUMN {col_name} {col_type}")
+    except Exception as e:
+        print("Notice: check tally_items columns:", e)
+
+    # Seed Suppliers from Master Data if empty
+    SUPPLIER_FILE = Path(__file__).resolve().parent.parent / "Master Data" / "Tcode MKVZ.XLSX"
+    try:
+        cur = c.execute("SELECT count(*) FROM suppliers")
+        if cur.fetchone()[0] == 0 and SUPPLIER_FILE.exists():
+            df_sup = pd.read_excel(SUPPLIER_FILE)
+            seen_sup = set()
+            to_ins = []
+            for _, row in df_sup.iterrows():
+                code = str(row.get('Supplier', '')).strip()
+                name = str(row.get('Supplier Name', '')).strip()
+                if not code or not name or code == 'nan' or name == 'nan':
+                    continue
+                if code in seen_sup:
+                    continue
+                seen_sup.add(code)
+                city = str(row.get('City', '')).strip() if pd.notna(row.get('City')) else ''
+                country = str(row.get('Country/Region Key', '')).strip() if pd.notna(row.get('Country/Region Key')) else ''
+                postal = str(row.get('Postal Code', '')).strip() if pd.notna(row.get('Postal Code')) else ''
+                p_org = str(row.get('Purch. organization', '')).strip() if pd.notna(row.get('Purch. organization')) else ''
+                to_ins.append((str(uuid.uuid4()), code, name, city, country, postal, p_org, 1, now, now))
+            if to_ins:
+                c.executemany("""
+                    INSERT OR REPLACE INTO suppliers (id, code, name, city, country, postal_code, purchasing_org, active, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, to_ins)
+    except Exception as e:
+        print("Notice: Error loading seed suppliers:", e)
 
     # Seed Default Settings if not exists
     cur = c.execute("SELECT id FROM settings WHERE id = 'global'")
@@ -616,12 +671,119 @@ def search_materials(q: str = ""):
         return []
     conn = get_db()
     rows = conn.execute("""
-        SELECT code, name FROM materials
+        SELECT code, name, extra_json FROM materials
         WHERE active = 1 AND (code LIKE ? OR name LIKE ?)
         ORDER BY code ASC LIMIT 20
     """, (f"%{term}%", f"%{term}%")).fetchall()
     conn.close()
-    return [{"code": r["code"], "name": r["name"]} for r in rows]
+    res = []
+    for r in rows:
+        extra = json.loads(r["extra_json"]) if r["extra_json"] else {}
+        uom = extra.get("BuN", "") or extra.get("UOM", "") or extra.get("Satuan", "")
+        res.append({"code": r["code"], "name": r["name"], "uom": uom})
+    return res
+
+# ----------------- SUPPLIERS ENDPOINTS -----------------
+@app.get("/api/suppliers/search")
+def search_suppliers(q: str = ""):
+    term = q.strip()
+    if not term:
+        return []
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT code, name, city FROM suppliers
+        WHERE active = 1 AND (code LIKE ? OR name LIKE ?)
+        ORDER BY code ASC LIMIT 20
+    """, (f"%{term}%", f"%{term}%")).fetchall()
+    conn.close()
+    return [{"code": r["code"], "name": r["name"], "city": r["city"]} for r in rows]
+
+@app.get("/api/suppliers")
+def get_suppliers(q: str = "", page: int = 1, limit: int = 25):
+    conn = get_db()
+    offset = (page - 1) * limit
+    params = []
+    where = "WHERE active = 1"
+    if q.strip():
+        where += " AND (code LIKE ? OR name LIKE ? OR city LIKE ?)"
+        wild = f"%{q.strip()}%"
+        params.extend([wild, wild, wild])
+    
+    total = conn.execute(f"SELECT count(*) FROM suppliers {where}", params).fetchone()[0]
+    rows = conn.execute(f"""
+        SELECT * FROM suppliers {where}
+        ORDER BY code ASC LIMIT ? OFFSET ?
+    """, params + [limit, offset]).fetchall()
+    conn.close()
+
+    items = [{
+        "id": r["id"],
+        "code": r["code"],
+        "name": r["name"],
+        "city": r["city"],
+        "country": r["country"],
+        "postal_code": r["postal_code"],
+        "purchasing_org": r["purchasing_org"],
+        "active": bool(r["active"]),
+        "created_at": r["created_at"],
+        "updated_at": r["updated_at"]
+    } for r in rows]
+    return {"items": items, "total": total, "page": page, "limit": limit}
+
+@app.post("/api/suppliers/upload")
+async def upload_suppliers(file: UploadFile = File(...), user: dict = Depends(require_admin)):
+    content = await file.read()
+    try:
+        df = pd.read_excel(io.BytesIO(content))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Gagal membaca file Excel: {str(e)}")
+    
+    code_col = None
+    name_col = None
+    for c in df.columns:
+        cl = str(c).strip().lower()
+        if "supplier" in cl and "name" not in cl:
+            code_col = c
+        elif "supplier name" in cl or "name" in cl:
+            name_col = c
+    
+    if not code_col or not name_col:
+        raise HTTPException(status_code=400, detail="Kolom 'Supplier' dan 'Supplier Name' tidak ditemukan dalam file Excel.")
+    
+    conn = get_db()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    inserted = 0
+    updated = 0
+    
+    for _, row in df.iterrows():
+        code = str(row[code_col]).strip()
+        name = str(row[name_col]).strip()
+        if not code or not name or code == "nan" or name == "nan":
+            continue
+        city = str(row.get("City", "")).strip() if pd.notna(row.get("City")) else ""
+        country = str(row.get("Country/Region Key", "")).strip() if pd.notna(row.get("Country/Region Key")) else ""
+        postal = str(row.get("Postal Code", "")).strip() if pd.notna(row.get("Postal Code")) else ""
+        p_org = str(row.get("Purch. organization", "")).strip() if pd.notna(row.get("Purch. organization")) else ""
+        
+        existing = conn.execute("SELECT id FROM suppliers WHERE code = ?", (code,)).fetchone()
+        if existing:
+            conn.execute("""
+                UPDATE suppliers SET name = ?, city = ?, country = ?, postal_code = ?, purchasing_org = ?, updated_at = ?
+                WHERE code = ?
+            """, (name, city, country, postal, p_org, now, code))
+            updated += 1
+        else:
+            conn.execute("""
+                INSERT INTO suppliers (id, code, name, city, country, postal_code, purchasing_org, active, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (str(uuid.uuid4()), code, name, city, country, postal, p_org, 1, now, now))
+            inserted += 1
+            
+    conn.commit()
+    conn.close()
+    log_activity(user["id"], user["name"], "upload_suppliers", "suppliers", "global", f"Upload Master Supplier {file.filename}: {inserted} baru, {updated} diperbarui")
+    return {"message": f"Berhasil memproses {inserted} supplier baru dan memperbarui {updated} supplier.", "inserted": inserted, "updated": updated}
+
 
 @app.get("/api/master/status")
 def get_master_status():
@@ -901,11 +1063,16 @@ def generate_doc_no(conn) -> str:
 class TallyItemInput(BaseModel):
     material_code: str
     material_name: str
+    uom: Optional[str] = ""
+    qty: Optional[float] = 0
+    supplier_code: Optional[str] = ""
+    supplier_name: Optional[str] = ""
     batch_fisik: Optional[str] = ""
     supplier_batch: Optional[str] = ""
     expired_date: Optional[str] = ""
     production_date: Optional[str] = ""
     pic_id: Optional[str] = ""
+    pic_name: Optional[str] = ""
 
 class TallySheetInput(BaseModel):
     action: str  # "draft" or "final"
@@ -1076,16 +1243,19 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
 
     for idx, it in enumerate(req.items):
         item_id = str(uuid.uuid4())
-        pic_name = u_map.get(it.pic_id, "")
+        pic_id = it.pic_id or user["id"]
+        pic_name = u_map.get(pic_id, user["name"])
         conn.execute("""
             INSERT INTO tally_items 
-            (id, sheet_id, seq, material_code, material_name, batch_fisik, supplier_batch, expired_date, production_date, pic_id, pic_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, sheet_id, seq, material_code, material_name, uom, qty, supplier_code, supplier_name, batch_fisik, supplier_batch, expired_date, production_date, pic_id, pic_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             item_id, sheet_id, idx + 1, it.material_code.strip(), it.material_name.strip(),
+            (it.uom or "").strip(), float(it.qty or 0),
+            (it.supplier_code or "").strip(), (it.supplier_name or "").strip(),
             (it.batch_fisik or "").strip(), (it.supplier_batch or "").strip(),
             (it.expired_date or "").strip(), (it.production_date or "").strip(),
-            (it.pic_id or "").strip(), pic_name
+            pic_id, pic_name
         ))
 
     # History
@@ -1130,6 +1300,10 @@ def get_tally_sheet(sheet_id: str):
             "seq": it["seq"],
             "material_code": it["material_code"],
             "material_name": it["material_name"],
+            "uom": it["uom"] if "uom" in it.keys() else "",
+            "qty": it["qty"] if "qty" in it.keys() else 0,
+            "supplier_code": it["supplier_code"] if "supplier_code" in it.keys() else "",
+            "supplier_name": it["supplier_name"] if "supplier_name" in it.keys() else "",
             "batch_fisik": it["batch_fisik"],
             "supplier_batch": it["supplier_batch"],
             "expired_date": it["expired_date"],
@@ -1195,16 +1369,19 @@ def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends
 
     for idx, it in enumerate(req.items):
         item_id = str(uuid.uuid4())
-        pic_name = u_map.get(it.pic_id, "")
+        pic_id = it.pic_id or user["id"]
+        pic_name = u_map.get(pic_id, it.pic_name or user["name"])
         conn.execute("""
             INSERT INTO tally_items 
-            (id, sheet_id, seq, material_code, material_name, batch_fisik, supplier_batch, expired_date, production_date, pic_id, pic_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, sheet_id, seq, material_code, material_name, uom, qty, supplier_code, supplier_name, batch_fisik, supplier_batch, expired_date, production_date, pic_id, pic_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             item_id, sheet_id, idx + 1, it.material_code.strip(), it.material_name.strip(),
+            (it.uom or "").strip(), float(it.qty or 0),
+            (it.supplier_code or "").strip(), (it.supplier_name or "").strip(),
             (it.batch_fisik or "").strip(), (it.supplier_batch or "").strip(),
             (it.expired_date or "").strip(), (it.production_date or "").strip(),
-            (it.pic_id or "").strip(), pic_name
+            pic_id, pic_name
         ))
 
     # Revisions count
@@ -1305,7 +1482,7 @@ def export_tally_sheet(sheet_id: str):
         bottom=Side(style='thin', color='D3D3D3')
     )
 
-    ws.merge_cells("A1:H1")
+    ws.merge_cells("A1:K1")
     ws["A1"] = "TALLY SHEET MATERIAL"
     ws["A1"].font = title_font
     ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
@@ -1330,7 +1507,7 @@ def export_tally_sheet(sheet_id: str):
     ws["F4"] = sheet["created_by_name"]
     ws["F4"].font = meta_font
 
-    headers = ["No. Urut", "Kode Material", "Nama Material", "Batch Fisik", "Supplier Batch", "Expired Date", "Production Date", "PIC"]
+    headers = ["No. Urut", "Kode Material", "Nama Material", "UOM", "Supplier", "Qty", "Batch Fisik", "Supplier Batch", "Expired Date", "Production Date", "PIC"]
     row_idx = 6
 
     for col_idx, h in enumerate(headers, start=1):
@@ -1344,17 +1521,24 @@ def export_tally_sheet(sheet_id: str):
         ws.cell(row=row_idx, column=1, value=it["seq"]).alignment = Alignment(horizontal="center")
         ws.cell(row=row_idx, column=2, value=it["material_code"]).alignment = Alignment(horizontal="center")
         ws.cell(row=row_idx, column=3, value=it["material_name"])
-        ws.cell(row=row_idx, column=4, value=it["batch_fisik"])
-        ws.cell(row=row_idx, column=5, value=it["supplier_batch"])
-        ws.cell(row=row_idx, column=6, value=it["expired_date"]).alignment = Alignment(horizontal="center")
-        ws.cell(row=row_idx, column=7, value=it["production_date"]).alignment = Alignment(horizontal="center")
-        ws.cell(row=row_idx, column=8, value=it["pic_name"])
+        ws.cell(row=row_idx, column=4, value=it["uom"] if "uom" in it.keys() else "").alignment = Alignment(horizontal="center")
+        s_code = it["supplier_code"] if "supplier_code" in it.keys() else ""
+        s_name = it["supplier_name"] if "supplier_name" in it.keys() else ""
+        supplier_display = f"{s_code} - {s_name}" if (s_code and s_name) else (s_name or s_code or "")
+        ws.cell(row=row_idx, column=5, value=supplier_display)
+        qty_val = float(it["qty"]) if ("qty" in it.keys() and it["qty"] is not None) else 0.0
+        ws.cell(row=row_idx, column=6, value=qty_val).alignment = Alignment(horizontal="right")
+        ws.cell(row=row_idx, column=7, value=it["batch_fisik"])
+        ws.cell(row=row_idx, column=8, value=it["supplier_batch"])
+        ws.cell(row=row_idx, column=9, value=it["expired_date"]).alignment = Alignment(horizontal="center")
+        ws.cell(row=row_idx, column=10, value=it["production_date"]).alignment = Alignment(horizontal="center")
+        ws.cell(row=row_idx, column=11, value=it["pic_name"])
 
-        for col_idx in range(1, 9):
+        for col_idx in range(1, 12):
             ws.cell(row=row_idx, column=col_idx).border = border_thin
 
     # Column widths
-    col_widths = [10, 18, 35, 18, 18, 15, 15, 20]
+    col_widths = [10, 18, 35, 10, 25, 12, 18, 18, 15, 15, 20]
     for col_idx, width in enumerate(col_widths, start=1):
         col_letter = openpyxl.utils.get_column_letter(col_idx)
         ws.column_dimensions[col_letter].width = width

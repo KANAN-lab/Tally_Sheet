@@ -72,21 +72,37 @@ export default function TallyDetail() {
       </div>
 
       <div className="overflow-x-auto rounded-xl border bg-white shadow-sm" data-testid="tally-detail-items-table">
-        <table className="w-full min-w-[900px] text-sm">
+        <table className="w-full min-w-[1000px] text-sm">
           <thead className="bg-[#0B2149] text-left text-xs font-semibold uppercase tracking-wider text-white">
-            <tr>{["No. Urut", "Kode Material", "Nama Material", "Batch Fisik", "Supplier Batch", "Expired Date", "Production Date", "PIC"].map((h) => <th key={h} className="px-4 py-3">{h}</th>)}</tr>
+            <tr>
+              {["No. Urut", "Kode Material", "Nama Material", "UOM", "Supplier", "Qty", "Batch Fisik", "Supplier Batch", "Expired Date", "Production Date", "PIC"].map((h) => (
+                <th key={h} className="px-3 py-3 whitespace-nowrap">{h}</th>
+              ))}
+            </tr>
           </thead>
           <tbody className="divide-y">
             {sheet.items.map((it) => (
               <tr key={it.id} className="hover:bg-slate-50" data-testid={`tally-detail-item-${it.seq}`}>
-                <td className="px-4 py-3 font-mono">{it.seq}</td>
-                <td className="px-4 py-3 font-mono text-xs font-semibold text-blue-900">{it.material_code}</td>
-                <td className="px-4 py-3">{it.material_name}</td>
-                <td className="px-4 py-3">{it.batch_fisik || "-"}</td>
-                <td className="px-4 py-3">{it.supplier_batch || "-"}</td>
-                <td className="px-4 py-3 whitespace-nowrap">{fmtDate(it.expired_date)}</td>
-                <td className="px-4 py-3 whitespace-nowrap">{fmtDate(it.production_date)}</td>
-                <td className="px-4 py-3">{it.pic_name || "-"}</td>
+                <td className="px-3 py-3 font-mono text-center">{it.seq}</td>
+                <td className="px-3 py-3 font-mono text-xs font-semibold text-blue-900">{it.material_code}</td>
+                <td className="px-3 py-3">{it.material_name}</td>
+                <td className="px-3 py-3 font-mono text-center text-xs font-medium">{it.uom || "-"}</td>
+                <td className="px-3 py-3 text-xs">
+                  {it.supplier_code ? (
+                    <div>
+                      <span className="font-mono font-semibold text-slate-800">{it.supplier_code}</span>
+                      {it.supplier_name && <div className="text-slate-500 truncate max-w-[180px]">{it.supplier_name}</div>}
+                    </div>
+                  ) : (
+                    it.supplier_name || "-"
+                  )}
+                </td>
+                <td className="px-3 py-3 text-right font-mono font-semibold">{it.qty !== null && it.qty !== undefined ? it.qty : 0}</td>
+                <td className="px-3 py-3">{it.batch_fisik || "-"}</td>
+                <td className="px-3 py-3">{it.supplier_batch || "-"}</td>
+                <td className="px-3 py-3 whitespace-nowrap">{fmtDate(it.expired_date)}</td>
+                <td className="px-3 py-3 whitespace-nowrap">{fmtDate(it.production_date)}</td>
+                <td className="px-3 py-3">{it.pic_name || "-"}</td>
               </tr>
             ))}
           </tbody>

@@ -11,6 +11,7 @@ import TallyDetail from "@/pages/TallyDetail";
 import TallyPrint from "@/pages/TallyPrint";
 import MasterData from "@/pages/MasterData";
 import MasterUpload from "@/pages/MasterUpload";
+import MasterSupplier from "@/pages/MasterSupplier";
 import Users from "@/pages/Users";
 import Activity from "@/pages/Activity";
 import Settings from "@/pages/Settings";
@@ -53,6 +54,7 @@ function App() {
             <Route path="tally/:id/edit" element={<TallyEditor />} />
             <Route path="master" element={<MasterData />} />
             <Route path="master/upload" element={<Protected admin><MasterUpload /></Protected>} />
+            <Route path="suppliers" element={<MasterSupplier />} />
             <Route path="users" element={<Protected admin><Users /></Protected>} />
             <Route path="activity" element={<Protected admin><Activity /></Protected>} />
             <Route path="settings" element={<Protected admin><Settings /></Protected>} />

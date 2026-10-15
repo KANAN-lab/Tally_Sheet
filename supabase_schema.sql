@@ -90,6 +90,10 @@ CREATE TABLE IF NOT EXISTS public.tally_items (
     seq INTEGER NOT NULL,
     material_code TEXT NOT NULL,
     material_name TEXT NOT NULL,
+    uom TEXT DEFAULT '',
+    qty NUMERIC DEFAULT 0,
+    supplier_code TEXT DEFAULT '',
+    supplier_name TEXT DEFAULT '',
     batch_fisik TEXT DEFAULT '',
     supplier_batch TEXT DEFAULT '',
     expired_date TEXT DEFAULT '',
@@ -98,6 +102,26 @@ CREATE TABLE IF NOT EXISTS public.tally_items (
     pic_name TEXT DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_tally_items_sheet_id ON public.tally_items(sheet_id);
+
+-- Migration support for existing tally_items table
+ALTER TABLE public.tally_items ADD COLUMN IF NOT EXISTS uom TEXT DEFAULT '';
+ALTER TABLE public.tally_items ADD COLUMN IF NOT EXISTS qty NUMERIC DEFAULT 0;
+ALTER TABLE public.tally_items ADD COLUMN IF NOT EXISTS supplier_code TEXT DEFAULT '';
+ALTER TABLE public.tally_items ADD COLUMN IF NOT EXISTS supplier_name TEXT DEFAULT '';
+
+-- 7. SUPPLIERS TABLE (Master MKVZ)
+CREATE TABLE IF NOT EXISTS public.suppliers (
+    id TEXT PRIMARY KEY,
+    code TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    city TEXT DEFAULT '',
+    country TEXT DEFAULT '',
+    postal_code TEXT DEFAULT '',
+    purch_org TEXT DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
+);
+CREATE INDEX IF NOT EXISTS idx_suppliers_code ON public.suppliers(code);
+CREATE INDEX IF NOT EXISTS idx_suppliers_name ON public.suppliers(name);
 CREATE INDEX IF NOT EXISTS idx_tally_items_batch_fisik ON public.tally_items(batch_fisik);
 
 -- 7. TALLY HISTORY TABLE

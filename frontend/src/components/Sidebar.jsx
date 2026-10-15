@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { Boxes, ChevronRight, Database, History, LayoutDashboard, Settings, UploadCloud, Users, ClipboardList } from "lucide-react";
+import { Boxes, Building2, ChevronRight, Database, History, LayoutDashboard, Settings, UploadCloud, Users, ClipboardList } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 export const NAV = [
@@ -7,6 +7,7 @@ export const NAV = [
   { to: "/tally", label: "Tally Sheet", icon: ClipboardList, id: "tally" },
   { to: "/master", label: "Master Data Material", icon: Database, end: true, id: "master" },
   { to: "/master/upload", label: "Upload Master Data", icon: UploadCloud, admin: true, id: "upload" },
+  { to: "/suppliers", label: "Master Data Supplier", icon: Building2, id: "suppliers" },
   { to: "/users", label: "Pengguna", icon: Users, admin: true, id: "users" },
   { to: "/activity", label: "Riwayat Aktivitas", icon: History, admin: true, id: "activity" },
   { to: "/settings", label: "Pengaturan", icon: Settings, admin: true, id: "settings" },

@@ -4,7 +4,7 @@ import { Printer } from "lucide-react";
 import { api, errMsg } from "@/lib/api";
 import { fmtDate, fmtDateTime } from "@/lib/format";
 
-const HEAD = ["No. Urut", "Kode Material", "Nama Material", "Batch Fisik", "Supplier Batch", "Expired Date", "Production Date", "PIC"];
+const HEAD = ["No. Urut", "Kode Material", "Nama Material", "UOM", "Supplier", "Qty", "Batch Fisik", "Supplier Batch", "Expired Date", "Production Date", "PIC"];
 const SIGN = ["PIC / Pembuat", "Pemeriksa", "Approver"];
 
 export default function TallyPrint() {
@@ -55,6 +55,9 @@ export default function TallyPrint() {
                 <td style={{ textAlign: "center", width: 34 }}>{it.seq}</td>
                 <td>{it.material_code}</td>
                 <td>{it.material_name}</td>
+                <td style={{ textAlign: "center" }}>{it.uom || "-"}</td>
+                <td>{it.supplier_code ? `${it.supplier_code} - ${it.supplier_name || ""}` : (it.supplier_name || "-")}</td>
+                <td style={{ textAlign: "right" }}>{it.qty !== null && it.qty !== undefined ? it.qty : 0}</td>
                 <td>{it.batch_fisik}</td>
                 <td>{it.supplier_batch}</td>
                 <td style={{ whiteSpace: "nowrap" }}>{it.expired_date ? fmtDate(it.expired_date) : ""}</td>
