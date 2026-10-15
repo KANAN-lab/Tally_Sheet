@@ -47,6 +47,13 @@ Dokumen ini melacak status pengerjaan fitur, perbaikan bug, arsitektur sistem, d
   - Menampilkan Nomor Surat Jalan (SJ), Nomor PO SAP, Nomor Polisi Armada Truk, status "SELESAI (STOCK TER-UU)", serta 3 kolom tanda tangan peran: *Checker (Pembuat)*, *Admin Warehouse (Verifikasi)*, dan *Quality Control (Disetujui / Stock UU)*.
 - [x] **Perbaikan Seleksi Dropdown Kode Material**:
   - Memperbaiki signature pemanggilan `update(i, patch)` pada komponen `TallyRow` serta menambahkan defensive null check pada `Object.keys()` sehingga pemilihan item dari dropdown `MaterialSearch` dan `SupplierSearch` berjalan lancar tanpa error `TypeError: Cannot convert undefined or null to object`.
+- [x] **Perbaikan Alur Transisi & Sinkronisasi Supabase (Fix Status Balik Menunggu Admin WH)**:
+  - Mengubah metode sinkronisasi transisi update ke Supabase menjadi `PATCH /rest/v1/tally_sheets` (sebelumnya `POST` yang memicu constraint violation `created_by cannot be null` sehingga status di Supabase membeku dan memutar balik status ke draf/admin saat re-sync serverless).
+  - Menerapkan validasi state machine ketat di `backend/domain.py` pada setiap aksi transisi agar dokumen tidak dapat diproses berkali-kali atau melompati tahapan.
+  - Memperketat `canEdit` di frontend agar dokumen yang sedang berjalan di QC atau sudah Selesai tidak dapat diakses di editor.
+- [x] **Optimasi Layout Grid & Responsivitas Layar Mobile**:
+  - Menghapus paksaan `min-w-[1280px]` pada layar kecil di Tally Editor; tabel otomatis menjadi mode Card terstruktur pada mobile (`< lg`) dan tabel lebar pada desktop.
+  - Menambahkan tampilan responsif Mobile Cards pada `TallyDetail.jsx` dan `TallyTable.jsx` (Dashboard & Daftar Tally) sehingga data item material mudah dibaca di layar HP tanpa harus scroll horizontal 1000px.
 
 ### C. Arsitektur OOP & Zero Hardcoding
 - [x] **Backend Domain Service**:

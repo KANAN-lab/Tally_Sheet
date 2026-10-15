@@ -41,7 +41,7 @@ export default function TallyRow({
 
   return (
     <div
-      className={`${GRID} relative rounded-lg border bg-white p-3 lg:border-0 lg:border-b lg:rounded-none lg:px-2 lg:py-2.5 transition-colors hover:bg-slate-50/40`}
+      className={`${GRID} relative rounded-xl border border-slate-200 bg-white p-4 shadow-sm mb-3 lg:mb-0 lg:shadow-none lg:border-0 lg:border-b lg:rounded-none lg:px-2 lg:py-2.5 transition-colors hover:bg-slate-50/40`}
       style={{ zIndex: Math.max(1, 40 - index) }}
       data-testid={`tally-editor-row-item-${index}`}
     >

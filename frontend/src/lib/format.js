@@ -28,8 +28,8 @@ export function pctChange(cur, prev) {
 
 export function canEdit(sheet, user) {
   if (!sheet) return false;
-  if (sheet.status === "cancelled" || sheet.status === "completed" || sheet.status === "final") return false;
-  return user?.role === "admin" || sheet.status === "draft" || sheet.status === "admin_hold";
+  if (sheet.status !== "draft" && sheet.status !== "admin_hold") return false;
+  return user?.role === "admin" || user?.role === "checker" || sheet.created_by === user?.id;
 }
 
 export function canCancel(sheet, user) {

@@ -534,10 +534,10 @@ export default function TallyEditor() {
           {/* TABLE CONTAINER */}
           <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
-              <div className="min-w-[1280px]">
-                {/* Table Header */}
+              <div className="min-w-full lg:min-w-[1280px]">
+                {/* Table Header (Hidden on mobile, visible on desktop) */}
                 <div
-                  className={`grid ${GRID} items-center bg-[#0B2149] text-white px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider`}
+                  className={`hidden lg:grid ${GRID} items-center bg-[#0B2149] text-white px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider`}
                 >
                   <div>No.</div>
                   <div>Kode Material *</div>

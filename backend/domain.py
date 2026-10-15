@@ -149,6 +149,8 @@ class WorkflowManager:
 
         # 1. ACTION: submit_to_admin (Dari Checker ke Admin Warehouse)
         if action == "submit_to_admin":
+            if status not in ("draft", "admin_hold"):
+                raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat diserahkan ke Admin. Hanya dokumen Draft atau Revisi yang dapat dikirim.")
             if not is_checker and not is_admin:
                 raise HTTPException(status_code=403, detail="Hanya Checker atau Admin yang dapat menyerahkan dokumen.")
             new_status = "waiting_admin"
@@ -157,6 +159,8 @@ class WorkflowManager:
 
         # 2. ACTION: admin_hold (Admin menahan dokumen)
         elif action == "admin_hold":
+            if status not in ("waiting_admin", "waiting_admin_1"):
+                raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat ditahan Admin. Dokumen harus dalam status Menunggu Verifikasi Admin.")
             if not is_admin:
                 raise HTTPException(status_code=403, detail="Hanya Admin Warehouse yang dapat menahan dokumen pada tahap verifikasi.")
             if not reason:
@@ -169,6 +173,8 @@ class WorkflowManager:
 
         # 3. ACTION: send_to_qc (Admin meneruskan ke QC)
         elif action == "send_to_qc":
+            if status not in ("waiting_admin", "waiting_admin_1", "admin_hold"):
+                raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat diteruskan ke QC. Dokumen harus dalam status Menunggu Verifikasi Admin.")
             if not is_admin:
                 raise HTTPException(status_code=403, detail="Hanya Admin Warehouse yang dapat meneruskan dokumen ke Tim QC.")
             new_status = "waiting_qc"
@@ -177,6 +183,8 @@ class WorkflowManager:
 
         # 4. ACTION: return_to_checker (Admin mengembalikan ke Checker untuk revisi fisik)
         elif action == "return_to_checker":
+            if status not in ("waiting_admin", "waiting_admin_1", "admin_hold"):
+                raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat dikembalikan ke Checker.")
             if not is_admin:
                 raise HTTPException(status_code=403, detail="Hanya Admin Warehouse yang dapat mengembalikan dokumen ke Checker.")
             if not reason:
@@ -189,6 +197,8 @@ class WorkflowManager:
 
         # 5. ACTION: qc_hold (QC menahan dokumen/material)
         elif action == "qc_hold":
+            if status not in ("waiting_qc",):
+                raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat ditahan QC. Dokumen harus dalam status Dalam Pemeriksaan QC.")
             if not is_qc:
                 raise HTTPException(status_code=403, detail="Hanya Tim QC yang dapat menahan dokumen pada tahap inspeksi mutu.")
             if not reason:
@@ -201,6 +211,8 @@ class WorkflowManager:
 
         # 6. ACTION: qc_approve (QC Lulus Uji Mutu -> SELESAI / STOCK TER-UU)
         elif action == "qc_approve":
+            if status not in ("waiting_qc", "qc_hold"):
+                raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat disetujui QC. Dokumen harus dalam status Dalam Pemeriksaan QC.")
             if not is_qc:
                 raise HTTPException(status_code=403, detail="Hanya Tim QC yang berwenang menyetujui mutu material.")
             # QC tidak perlu nomor COA!
@@ -217,12 +229,14 @@ class WorkflowManager:
 
         # 7. ACTION: qc_reject (QC menolak mutu material)
         elif action == "qc_reject":
+            if status not in ("waiting_qc", "qc_hold"):
+                raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat ditolak QC. Dokumen harus dalam status Dalam Pemeriksaan QC.")
             if not is_qc:
                 raise HTTPException(status_code=403, detail="Hanya Tim QC yang berwenang menolak material.")
             if not reason:
                 raise HTTPException(status_code=400, detail="Alasan penolakan mutu QC wajib diisi.")
-            new_status = "qc_rejected"
-            new_handler_role = "warehouse_admin"
+            new_status = "cancelled"
+            new_handler_role = "closed"
             qc_stat = "rejected"
             qc_nts = reason
             qc_by = user["name"]

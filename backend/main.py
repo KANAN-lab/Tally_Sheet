@@ -40,17 +40,45 @@ def get_sb_headers():
         "Prefer": "resolution=merge-duplicates"
     }
 
-def sync_tally_to_supabase(sheet_row: dict, items: list = None, history_row: dict = None):
+def sync_tally_to_supabase(sheet_row: dict, items: list = None, history_row: dict = None, is_new: bool = False):
     if not SUPABASE_KEY or not SUPABASE_URL:
         return
     try:
-        requests.post(f"{SUPABASE_URL}/rest/v1/tally_sheets", headers=get_sb_headers(), json=[sheet_row], timeout=4)
-        if items is not None:
-            requests.delete(f"{SUPABASE_URL}/rest/v1/tally_items?sheet_id=eq.{sheet_row['id']}", headers=get_sb_headers(), timeout=4)
+        sheet_id = sheet_row.get("id")
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        if is_new:
+            # Full insert for brand new tally sheet
+            r = requests.post(
+                f"{SUPABASE_URL}/rest/v1/tally_sheets",
+                headers={**headers, "Prefer": "resolution=merge-duplicates"},
+                json=[sheet_row],
+                timeout=4
+            )
+            if r.status_code >= 400:
+                print(f"Notice: Supabase POST sheet error {r.status_code}: {r.text}")
+        else:
+            # UPDATE existing sheet via PATCH (prevents null constraint violation on created_by/created_at)
+            patch_data = {k: v for k, v in sheet_row.items() if k != "id"}
+            r = requests.patch(
+                f"{SUPABASE_URL}/rest/v1/tally_sheets?id=eq.{sheet_id}",
+                headers=headers,
+                json=patch_data,
+                timeout=4
+            )
+            if r.status_code >= 400:
+                print(f"Notice: Supabase PATCH sheet error {r.status_code}: {r.text}")
+
+        if items is not None and sheet_id:
+            requests.delete(f"{SUPABASE_URL}/rest/v1/tally_items?sheet_id=eq.{sheet_id}", headers=headers, timeout=4)
             if items:
-                requests.post(f"{SUPABASE_URL}/rest/v1/tally_items", headers=get_sb_headers(), json=items, timeout=4)
+                requests.post(f"{SUPABASE_URL}/rest/v1/tally_items", headers=headers, json=items, timeout=4)
         if history_row:
-            requests.post(f"{SUPABASE_URL}/rest/v1/tally_history", headers=get_sb_headers(), json=[history_row], timeout=4)
+            requests.post(f"{SUPABASE_URL}/rest/v1/tally_history", headers=headers, json=[history_row], timeout=4)
     except Exception as e:
         print("Notice: Supabase push warning:", e)
 
@@ -67,6 +95,9 @@ def sync_from_supabase_if_needed(conn, sheet_id: str = None):
         if r.status_code == 200:
             sheets = r.json()
             for s in sheets:
+                raw_status = s.get("status") or "draft"
+                clean_status = "waiting_admin" if raw_status == "waiting_admin_1" else raw_status
+
                 exists = conn.execute("SELECT id FROM tally_sheets WHERE id = ?", (s["id"],)).fetchone()
                 if not exists:
                     conn.execute("""
@@ -77,7 +108,7 @@ def sync_from_supabase_if_needed(conn, sheet_id: str = None):
                          current_handler_role, current_handler_name, pending_reason, pending_category, qc_status, qc_notes, qc_by_name, qc_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
-                        s["id"], s["doc_no"], s["status"], s["created_by"], s["created_by_name"],
+                        s["id"], s["doc_no"], clean_status, s["created_by"], s["created_by_name"],
                         s["created_at"], s["updated_by"], s["updated_by_name"], s["updated_at"],
                         s.get("finalized_at"), s.get("finalized_by"), s.get("finalized_by_name"),
                         s.get("cancelled_at"), s.get("cancelled_by"), s.get("cancelled_by_name"),
@@ -100,7 +131,7 @@ def sync_from_supabase_if_needed(conn, sheet_id: str = None):
                             pending_reason = ?, pending_category = ?, qc_status = ?, qc_notes = ?, qc_by_name = ?, qc_at = ?
                         WHERE id = ?
                     """, (
-                        s["status"], s["updated_by"], s["updated_by_name"], s["updated_at"],
+                        clean_status, s["updated_by"], s["updated_by_name"], s["updated_at"],
                         s.get("finalized_at"), s.get("finalized_by"), s.get("finalized_by_name"),
                         s.get("cancelled_at"), s.get("cancelled_by"), s.get("cancelled_by_name"),
                         s.get("cancel_reason"),
@@ -1381,8 +1412,8 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
     
     # Workflow Status determination
     if req.action == "submit_to_admin":
-        status = "waiting_admin_1"
-        handler_role = "admin"
+        status = "waiting_admin"
+        handler_role = "warehouse_admin"
         handler_name = ""
     elif req.action == "final":
         status = "completed"
@@ -1473,9 +1504,9 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
         "id": hist_id, "sheet_id": sheet_id, "action": req.action, "revision": 1, "at": now,
         "by_name": user["name"], "by_id": user["id"], "by_role": user.get("role", "checker"),
         "from_status": "", "to_status": status, "category": "", "reason": initial_reason
-    })
+    }, is_new=True)
 
-    log_action = "submit_tally" if status == "waiting_admin_1" else ("create_tally" if status == "draft" else "finalize_tally")
+    log_action = "submit_tally" if status == "waiting_admin" else ("create_tally" if status == "draft" else "finalize_tally")
     log_activity(user["id"], user["name"], log_action, "tally_sheet", sheet_id, f"Tally sheet {doc_no} ({status}) dengan {len(req.items)} item. SJ: {delivery_note}, PO: {po_num}")
 
     return {"id": sheet_id, "doc_no": doc_no, "status": status}
@@ -1483,10 +1514,8 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
 @app.get("/api/tally-sheets/{sheet_id}")
 def get_tally_sheet(sheet_id: str):
     conn = get_db()
+    sync_from_supabase_if_needed(conn, sheet_id=sheet_id)
     sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
-    if not sheet:
-        sync_from_supabase_if_needed(conn, sheet_id=sheet_id)
-        sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
     if not sheet:
         conn.close()
         raise HTTPException(status_code=404, detail="Tally sheet tidak ditemukan.")
@@ -1561,10 +1590,8 @@ def get_tally_sheet(sheet_id: str):
 @app.put("/api/tally-sheets/{sheet_id}")
 def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends(get_current_user)):
     conn = get_db()
+    sync_from_supabase_if_needed(conn, sheet_id=sheet_id)
     sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
-    if not sheet:
-        sync_from_supabase_if_needed(conn, sheet_id=sheet_id)
-        sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
     if not sheet:
         conn.close()
         raise HTTPException(status_code=404, detail="Tally sheet tidak ditemukan.")
@@ -1579,8 +1606,8 @@ def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends
     actual_id = sheet["id"]
 
     if req.action == "submit_to_admin":
-        new_status = "waiting_admin_1"
-        handler_role = "admin"
+        new_status = "waiting_admin"
+        handler_role = "warehouse_admin"
         handler_name = ""
     elif req.action == "final":
         new_status = "completed"
@@ -1686,10 +1713,8 @@ def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends
 @app.post("/api/tally-sheets/{sheet_id}/transition")
 def transition_tally_sheet(sheet_id: str, req: WorkflowTransitionInput, user: dict = Depends(get_current_user)):
     conn = get_db()
+    sync_from_supabase_if_needed(conn, sheet_id=sheet_id)
     sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
-    if not sheet:
-        sync_from_supabase_if_needed(conn, sheet_id=sheet_id)
-        sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
     if not sheet:
         conn.close()
         raise HTTPException(status_code=404, detail="Tally sheet tidak ditemukan.")
@@ -1734,10 +1759,8 @@ class CancelRequest(BaseModel):
 @app.post("/api/tally-sheets/{sheet_id}/cancel")
 def cancel_tally_sheet(sheet_id: str, req: CancelRequest, user: dict = Depends(get_current_user)):
     conn = get_db()
+    sync_from_supabase_if_needed(conn, sheet_id=sheet_id)
     sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
-    if not sheet:
-        sync_from_supabase_if_needed(conn, sheet_id=sheet_id)
-        sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
     if not sheet:
         conn.close()
         raise HTTPException(status_code=404, detail="Tally sheet tidak ditemukan.")
