@@ -1,0 +1,110 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    margin: 0;
+    font-family: "IBM Plex Sans", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: #f4f6fb;
+}
+
+h1, h2, h3, h4, .font-display {
+    font-family: "Manrope", sans-serif;
+}
+
+.font-mono, code {
+    font-family: "JetBrains Mono", monospace;
+}
+
+@layer base {
+    :root {
+        --background: 225 33% 97%;
+        --foreground: 222 47% 11%;
+        --card: 0 0% 100%;
+        --card-foreground: 222 47% 11%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 222 47% 11%;
+        --primary: 221 83% 40%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 214 32% 95%;
+        --secondary-foreground: 222 47% 11%;
+        --muted: 214 32% 95%;
+        --muted-foreground: 215 16% 47%;
+        --accent: 214 60% 95%;
+        --accent-foreground: 222 47% 11%;
+        --destructive: 0 72% 51%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 214 32% 90%;
+        --input: 214 32% 86%;
+        --ring: 221 83% 45%;
+        --radius: 0.6rem;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+    body {
+        @apply bg-background text-foreground;
+    }
+}
+
+.fade-up {
+    animation: fadeUp 0.35s ease-out both;
+}
+
+@keyframes fadeUp {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Print A4 */
+.print-sheet {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0 auto;
+    background: #fff;
+    padding: 14mm 12mm;
+    color: #000;
+    font-family: "IBM Plex Sans", sans-serif;
+}
+
+.print-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+}
+
+.print-table th, .print-table td {
+    border: 1px solid #333;
+    padding: 4px 5px;
+    vertical-align: top;
+    word-break: break-word;
+}
+
+.print-table thead { display: table-header-group; }
+.print-table tr { page-break-inside: avoid; break-inside: avoid; }
+.print-table th { background: #e5e7eb; font-weight: 700; text-align: center; }
+
+@page {
+    size: A4 portrait;
+    margin: 12mm 10mm 14mm 10mm;
+    @bottom-right {
+        content: "Halaman " counter(page) " dari " counter(pages);
+        font-size: 9px;
+        font-family: sans-serif;
+    }
+}
+
+@media print {
+    body { background: #fff !important; }
+    .no-print { display: none !important; }
+    .print-sheet { width: auto; min-height: auto; padding: 0; margin: 0; box-shadow: none !important; border: none !important; }
+    .print-table th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .avoid-break { break-inside: avoid; page-break-inside: avoid; }
+}

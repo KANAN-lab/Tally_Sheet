@@ -1,0 +1,38 @@
+# Node
+node_modules/
+*/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist/
+frontend/dist/
+
+# Python
+__pycache__/
+*/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# SQLite WAL and temp files
+*.db-wal
+*.db-shm
+*.db-journal
+
+# Environment variables (keep secrets out of git)
+.env
+.env.local
+.env.*.local
+
+# Vercel
+.vercel/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini

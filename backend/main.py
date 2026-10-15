@@ -1,0 +1,1420 @@
+import os
+import io
+import json
+import uuid
+import sqlite3
+import hashlib
+import datetime
+from typing import Optional, List, Dict, Any
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File, Form, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, JSONResponse
+from pydantic import BaseModel
+import jwt
+import pandas as pd
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+# Constants
+SECRET_KEY = os.environ.get("SECRET_KEY", "tally_secret_key_production_grade_jwt_token")
+ALGORITHM = "HS256"
+
+# Ensure serverless environments (Vercel / Lambda) use writable /tmp
+DB_ORIGIN = Path(__file__).resolve().parent / "tally_sheet.db"
+if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+    import shutil
+    DB_PATH = Path("/tmp/tally_sheet.db")
+    if not DB_PATH.exists() and DB_ORIGIN.exists():
+        try:
+            shutil.copy2(DB_ORIGIN, DB_PATH)
+        except Exception as e:
+            print("Notice: could not copy DB to /tmp:", e)
+else:
+    DB_PATH = DB_ORIGIN
+
+SEED_FILE = Path(__file__).resolve().parent / "seed_materials.json"
+
+# Helpers for Password & Auth
+def hash_password(password: str) -> str:
+    salt = "tally_salt_"
+    return hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
+
+def verify_password(password: str, hashed: str) -> bool:
+    return hash_password(password) == hashed
+
+def create_jwt(user_id: str, email: str, role: str) -> str:
+    payload = {
+        "sub": user_id,
+        "email": email,
+        "role": role,
+        "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=7)
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+def get_db():
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    return conn
+
+# Database Initialization
+def init_db():
+    conn = get_db()
+    c = conn.cursor()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    c.executescript("""
+    PRAGMA journal_mode=WAL;
+    
+    CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'user',
+        is_pic INTEGER NOT NULL DEFAULT 1,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS settings (
+        id TEXT PRIMARY KEY,
+        required_json TEXT NOT NULL,
+        duplicate_rule TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        updated_by_name TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS master_versions (
+        id TEXT PRIMARY KEY,
+        version INTEGER NOT NULL,
+        filename TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        uploaded_by TEXT NOT NULL,
+        uploaded_by_name TEXT NOT NULL,
+        uploaded_at TEXT NOT NULL,
+        total_rows INTEGER NOT NULL,
+        valid_rows INTEGER NOT NULL,
+        error_rows INTEGER NOT NULL,
+        inserted INTEGER NOT NULL,
+        updated INTEGER NOT NULL,
+        deactivated INTEGER NOT NULL,
+        active_total INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS materials (
+        id TEXT PRIMARY KEY,
+        code TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        extra_json TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        version_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS tally_sheets (
+        id TEXT PRIMARY KEY,
+        doc_no TEXT UNIQUE NOT NULL,
+        status TEXT NOT NULL, -- draft, final, cancelled
+        created_by TEXT NOT NULL,
+        created_by_name TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_by TEXT NOT NULL,
+        updated_by_name TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        finalized_at TEXT,
+        finalized_by TEXT,
+        finalized_by_name TEXT,
+        cancelled_at TEXT,
+        cancelled_by TEXT,
+        cancelled_by_name TEXT,
+        cancel_reason TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS tally_items (
+        id TEXT PRIMARY KEY,
+        sheet_id TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        material_code TEXT NOT NULL,
+        material_name TEXT NOT NULL,
+        batch_fisik TEXT DEFAULT '',
+        supplier_batch TEXT DEFAULT '',
+        expired_date TEXT DEFAULT '',
+        production_date TEXT DEFAULT '',
+        pic_id TEXT DEFAULT '',
+        pic_name TEXT DEFAULT '',
+        FOREIGN KEY (sheet_id) REFERENCES tally_sheets(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS tally_history (
+        id TEXT PRIMARY KEY,
+        sheet_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        at TEXT NOT NULL,
+        by_name TEXT NOT NULL,
+        by_id TEXT NOT NULL,
+        FOREIGN KEY (sheet_id) REFERENCES tally_sheets(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS activity_logs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        user_name TEXT NOT NULL,
+        action TEXT NOT NULL,
+        entity TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        details TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    """)
+
+    # Seed Default Settings if not exists
+    cur = c.execute("SELECT id FROM settings WHERE id = 'global'")
+    if not cur.fetchone():
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        c.execute("""
+            INSERT INTO settings (id, required_json, duplicate_rule, updated_at, updated_by_name)
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            "global",
+            json.dumps({
+                "batch_fisik": True,
+                "supplier_batch": True,
+                "expired_date": True,
+                "production_date": True,
+                "pic": True
+            }),
+            "within_document",
+            now,
+            "Ade Iksan Ramdani"
+        ))
+
+    # Seed Default Users
+    cur = c.execute("SELECT id FROM users WHERE email = 'admin@tally.com'")
+    if not cur.fetchone():
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        c.execute("""
+            INSERT INTO users (id, email, name, password_hash, role, is_pic, active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            "0957b49d-67b9-437a-8d63-18cc1274def3",
+            "admin@tally.com",
+            "Administrator",
+            hash_password("Admin123!"),
+            "admin",
+            1,
+            1,
+            now
+        ))
+        c.execute("""
+            INSERT INTO users (id, email, name, password_hash, role, is_pic, active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            "663aa1ce-82f6-428f-8f3d-9fe4e135a2b1",
+            "adeiksanr@gmail.com",
+            "Ade Iksan Ramdani",
+            hash_password("Admin123!"),
+            "admin",
+            1,
+            1,
+            now
+        ))
+        c.execute("""
+            INSERT INTO users (id, email, name, password_hash, role, is_pic, active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            "9707715a-10b7-498c-94c8-276ab935f5dd",
+            "azes@tally.com",
+            "Azes",
+            hash_password("Admin123!"),
+            "user",
+            1,
+            1,
+            now
+        ))
+
+    # Seed materials from dump if empty
+    cur = c.execute("SELECT count(*) FROM materials")
+    if cur.fetchone()[0] == 0 and SEED_FILE.exists():
+        try:
+            with open(SEED_FILE, 'r', encoding='utf-8') as f:
+                seed_data = json.load(f)
+            
+            versions = seed_data.get("versions", [])
+            for v in versions:
+                c.execute("""
+                    INSERT OR REPLACE INTO master_versions 
+                    (id, version, filename, mode, uploaded_by, uploaded_by_name, uploaded_at, total_rows, valid_rows, error_rows, inserted, updated, deactivated, active_total)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    v["id"], v["version"], v["filename"], v["mode"], v["uploaded_by"],
+                    v["uploaded_by_name"], v["uploaded_at"], v["total_rows"], v["valid_rows"],
+                    v["error_rows"], v["inserted"], v["updated"], v["deactivated"], v["active_total"]
+                ))
+            
+            materials = seed_data.get("materials", [])
+            for m in materials:
+                c.execute("""
+                    INSERT OR REPLACE INTO materials
+                    (id, code, name, extra_json, active, version_id, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    m["id"], m["code"], m["name"], json.dumps(m.get("extra", {})),
+                    1 if m.get("active", True) else 0, m.get("version_id", ""),
+                    m.get("created_at", now), m.get("updated_at", now)
+                ))
+        except Exception as e:
+            print("Error loading seed materials:", e)
+
+    conn.commit()
+    conn.close()
+
+# In-memory storage for preview uploads
+previews_cache: Dict[str, Any] = {}
+
+# FastAPI App
+app = FastAPI(title="Tally Sheet API", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Auth Dependency
+def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token tidak valid atau tidak disertakan.")
+    token = authorization.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        conn = get_db()
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        conn.close()
+        if not row or not row["active"]:
+            raise HTTPException(status_code=401, detail="Pengguna tidak aktif atau tidak ditemukan.")
+        return {
+            "id": row["id"],
+            "email": row["email"],
+            "name": row["name"],
+            "role": row["role"],
+            "is_pic": bool(row["is_pic"]),
+            "active": bool(row["active"]),
+            "created_at": row["created_at"]
+        }
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Sesi berakhir atau token tidak valid.")
+
+def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Akses ditolak. Fitur ini hanya untuk Admin.")
+    return user
+
+def log_activity(user_id: str, user_name: str, action: str, entity: str, entity_id: str, details: str):
+    conn = get_db()
+    conn.execute("""
+        INSERT INTO activity_logs (id, user_id, user_name, action, entity, entity_id, details, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        str(uuid.uuid4()), user_id, user_name, action, entity, entity_id, details,
+        datetime.datetime.now(datetime.timezone.utc).isoformat()
+    ))
+    conn.commit()
+    conn.close()
+
+# ----------------- AUTH ENDPOINTS -----------------
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+@app.post("/api/auth/login")
+def login(req: LoginRequest):
+    conn = get_db()
+    user = conn.execute("SELECT * FROM users WHERE email = ?", (req.email.strip().lower(),)).fetchone()
+    conn.close()
+    if not user or not verify_password(req.password, user["password_hash"]):
+        raise HTTPException(status_code=400, detail="Email atau password salah.")
+    if not user["active"]:
+        raise HTTPException(status_code=403, detail="Akun dinonaktifkan.")
+    
+    token = create_jwt(user["id"], user["email"], user["role"])
+    user_dict = {
+        "id": user["id"],
+        "email": user["email"],
+        "name": user["name"],
+        "role": user["role"],
+        "is_pic": bool(user["is_pic"]),
+        "active": bool(user["active"]),
+        "created_at": user["created_at"]
+    }
+    log_activity(user["id"], user["name"], "login", "auth", user["id"], "Login berhasil")
+    return {"token": token, "user": user_dict}
+
+@app.get("/api/auth/me")
+def get_me(user: dict = Depends(get_current_user)):
+    return user
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+@app.post("/api/auth/change-password")
+def change_password(req: ChangePasswordRequest, user: dict = Depends(get_current_user)):
+    conn = get_db()
+    u = conn.execute("SELECT password_hash FROM users WHERE id = ?", (user["id"],)).fetchone()
+    if not verify_password(req.old_password, u["password_hash"]):
+        conn.close()
+        raise HTTPException(status_code=400, detail="Password lama salah.")
+    if len(req.new_password) < 8:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Password baru minimal 8 karakter.")
+    
+    conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password(req.new_password), user["id"]))
+    conn.commit()
+    conn.close()
+    log_activity(user["id"], user["name"], "change_password", "auth", user["id"], "Password berhasil diubah")
+    return {"message": "Password berhasil diubah"}
+
+# ----------------- USERS & PICS -----------------
+@app.get("/api/pics")
+def get_pics():
+    conn = get_db()
+    rows = conn.execute("SELECT id, name FROM users WHERE is_pic = 1 AND active = 1 ORDER BY name ASC").fetchall()
+    conn.close()
+    return [{"id": r["id"], "name": r["name"]} for r in rows]
+
+@app.get("/api/users")
+def get_users(admin: dict = Depends(require_admin)):
+    conn = get_db()
+    rows = conn.execute("SELECT id, email, name, role, is_pic, active, created_at FROM users ORDER BY created_at ASC").fetchall()
+    conn.close()
+    return [{
+        "id": r["id"],
+        "email": r["email"],
+        "name": r["name"],
+        "role": r["role"],
+        "is_pic": bool(r["is_pic"]),
+        "active": bool(r["active"]),
+        "created_at": r["created_at"]
+    } for r in rows]
+
+class CreateUserRequest(BaseModel):
+    email: str
+    name: str
+    password: str
+    role: str = "user"
+    is_pic: bool = True
+
+@app.post("/api/users")
+def create_user(req: CreateUserRequest, admin: dict = Depends(require_admin)):
+    email = req.email.strip().lower()
+    if len(req.password) < 8:
+        raise HTTPException(status_code=400, detail="Password minimal 8 karakter.")
+    conn = get_db()
+    existing = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+    if existing:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Email sudah terdaftar.")
+    
+    uid = str(uuid.uuid4())
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    conn.execute("""
+        INSERT INTO users (id, email, name, password_hash, role, is_pic, active, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (uid, email, req.name.strip(), hash_password(req.password), req.role, 1 if req.is_pic else 0, 1, now))
+    conn.commit()
+    conn.close()
+    log_activity(admin["id"], admin["name"], "create_user", "user", uid, f"Membuat akun {email} ({req.role})")
+    return {"id": uid, "email": email, "name": req.name, "role": req.role, "is_pic": req.is_pic, "active": True, "created_at": now}
+
+class UpdateUserRequest(BaseModel):
+    name: str
+    role: str
+    is_pic: bool
+    active: bool
+    password: Optional[str] = None
+
+@app.put("/api/users/{user_id}")
+def update_user(user_id: str, req: UpdateUserRequest, admin: dict = Depends(require_admin)):
+    conn = get_db()
+    u = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not u:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Pengguna tidak ditemukan.")
+    
+    pw_hash = hash_password(req.password) if req.password and len(req.password) >= 8 else u["password_hash"]
+    conn.execute("""
+        UPDATE users SET name = ?, role = ?, is_pic = ?, active = ?, password_hash = ?
+        WHERE id = ?
+    """, (req.name.strip(), req.role, 1 if req.is_pic else 0, 1 if req.active else 0, pw_hash, user_id))
+    conn.commit()
+    conn.close()
+    log_activity(admin["id"], admin["name"], "update_user", "user", user_id, f"Memperbarui akun {u['email']}")
+    return {"message": "Pengguna berhasil diperbarui"}
+
+# ----------------- SETTINGS -----------------
+@app.get("/api/settings")
+def get_settings():
+    conn = get_db()
+    row = conn.execute("SELECT * FROM settings WHERE id = 'global'").fetchone()
+    conn.close()
+    if not row:
+        return {"id": "global", "required": {}, "duplicate_rule": "within_document", "updated_at": "", "updated_by_name": ""}
+    return {
+        "id": "global",
+        "required": json.loads(row["required_json"]),
+        "duplicate_rule": row["duplicate_rule"],
+        "updated_at": row["updated_at"],
+        "updated_by_name": row["updated_by_name"]
+    }
+
+class SettingsRequest(BaseModel):
+    required: Dict[str, bool]
+    duplicate_rule: str
+
+@app.put("/api/settings")
+def update_settings(req: SettingsRequest, admin: dict = Depends(require_admin)):
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    conn = get_db()
+    conn.execute("""
+        UPDATE settings SET required_json = ?, duplicate_rule = ?, updated_at = ?, updated_by_name = ?
+        WHERE id = 'global'
+    """, (json.dumps(req.required), req.duplicate_rule, now, admin["name"]))
+    conn.commit()
+    conn.close()
+    
+    req_str = ", ".join([k for k, v in req.required.items() if v])
+    log_activity(admin["id"], admin["name"], "update_settings", "settings", "global", f"Kolom wajib: {req_str}; aturan duplikat: {req.duplicate_rule}")
+    return {
+        "id": "global",
+        "required": req.required,
+        "duplicate_rule": req.duplicate_rule,
+        "updated_at": now,
+        "updated_by_name": admin["name"]
+    }
+
+# ----------------- DASHBOARD -----------------
+@app.get("/api/dashboard")
+def get_dashboard():
+    conn = get_db()
+    total = conn.execute("SELECT count(*) FROM tally_sheets").fetchone()[0]
+    today_str = datetime.date.today().isoformat()
+    yesterday_str = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    this_month_prefix = datetime.date.today().strftime("%Y-%m")
+    last_month_date = (datetime.date.today().replace(day=1) - datetime.timedelta(days=1))
+    last_month_prefix = last_month_date.strftime("%Y-%m")
+
+    today_count = conn.execute("SELECT count(*) FROM tally_sheets WHERE created_at LIKE ?", (f"{today_str}%",)).fetchone()[0]
+    yesterday_count = conn.execute("SELECT count(*) FROM tally_sheets WHERE created_at LIKE ?", (f"{yesterday_str}%",)).fetchone()[0]
+    total_this_month = conn.execute("SELECT count(*) FROM tally_sheets WHERE created_at LIKE ?", (f"{this_month_prefix}%",)).fetchone()[0]
+    total_last_month = conn.execute("SELECT count(*) FROM tally_sheets WHERE created_at LIKE ?", (f"{last_month_prefix}%",)).fetchone()[0]
+
+    rows_total = conn.execute("SELECT count(*) FROM tally_items").fetchone()[0]
+    rows_this_month = conn.execute("""
+        SELECT count(*) FROM tally_items ti
+        JOIN tally_sheets ts ON ti.sheet_id = ts.id
+        WHERE ts.created_at LIKE ?
+    """, (f"{this_month_prefix}%",)).fetchone()[0]
+    rows_last_month = conn.execute("""
+        SELECT count(*) FROM tally_items ti
+        JOIN tally_sheets ts ON ti.sheet_id = ts.id
+        WHERE ts.created_at LIKE ?
+    """, (f"{last_month_prefix}%",)).fetchone()[0]
+
+    drafts = conn.execute("SELECT count(*) FROM tally_sheets WHERE status = 'draft'").fetchone()[0]
+    drafts_today = conn.execute("SELECT count(*) FROM tally_sheets WHERE status = 'draft' AND created_at LIKE ?", (f"{today_str}%",)).fetchone()[0]
+    drafts_yesterday = conn.execute("SELECT count(*) FROM tally_sheets WHERE status = 'draft' AND created_at LIKE ?", (f"{yesterday_str}%",)).fetchone()[0]
+
+    final_count = conn.execute("SELECT count(*) FROM tally_sheets WHERE status = 'final'").fetchone()[0]
+    cancelled_count = conn.execute("SELECT count(*) FROM tally_sheets WHERE status = 'cancelled'").fetchone()[0]
+
+    last_v = conn.execute("SELECT * FROM master_versions ORDER BY version DESC LIMIT 1").fetchone()
+    last_master = None
+    if last_v:
+        last_master = {
+            "id": last_v["id"],
+            "version": last_v["version"],
+            "filename": last_v["filename"],
+            "mode": last_v["mode"],
+            "uploaded_by": last_v["uploaded_by"],
+            "uploaded_by_name": last_v["uploaded_by_name"],
+            "uploaded_at": last_v["uploaded_at"],
+            "total_rows": last_v["total_rows"],
+            "valid_rows": last_v["valid_rows"],
+            "error_rows": last_v["error_rows"],
+            "inserted": last_v["inserted"],
+            "updated": last_v["updated"],
+            "deactivated": last_v["deactivated"],
+            "active_total": last_v["active_total"]
+        }
+
+    materials_active = conn.execute("SELECT count(*) FROM materials WHERE active = 1").fetchone()[0]
+    conn.close()
+
+    return {
+        "total": total,
+        "total_this_month": total_this_month,
+        "total_last_month": total_last_month,
+        "today": today_count,
+        "yesterday": yesterday_count,
+        "rows_total": rows_total,
+        "rows_this_month": rows_this_month,
+        "rows_last_month": rows_last_month,
+        "drafts": drafts,
+        "drafts_today": drafts_today,
+        "drafts_yesterday": drafts_yesterday,
+        "status_counts": {
+            "final": final_count,
+            "draft": drafts,
+            "cancelled": cancelled_count
+        },
+        "last_master": last_master,
+        "materials_active": materials_active
+    }
+
+# ----------------- MATERIALS & MASTER DATA -----------------
+@app.get("/api/materials")
+def get_materials(q: str = "", page: int = 1, limit: int = 25):
+    conn = get_db()
+    offset = (page - 1) * limit
+    params = []
+    where = "WHERE active = 1"
+    if q.strip():
+        where += " AND (code LIKE ? OR name LIKE ?)"
+        params.extend([f"%{q.strip()}%", f"%{q.strip()}%"])
+    
+    total = conn.execute(f"SELECT count(*) FROM materials {where}", params).fetchone()[0]
+    rows = conn.execute(f"""
+        SELECT * FROM materials {where}
+        ORDER BY code ASC LIMIT ? OFFSET ?
+    """, params + [limit, offset]).fetchall()
+    conn.close()
+
+    items = []
+    for r in rows:
+        items.append({
+            "id": r["id"],
+            "code": r["code"],
+            "name": r["name"],
+            "extra": json.loads(r["extra_json"]),
+            "active": bool(r["active"]),
+            "version_id": r["version_id"],
+            "created_at": r["created_at"],
+            "updated_at": r["updated_at"]
+        })
+    return {"items": items, "total": total, "page": page, "limit": limit}
+
+@app.get("/api/materials/search")
+def search_materials(q: str = ""):
+    term = q.strip()
+    if not term:
+        return []
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT code, name FROM materials
+        WHERE active = 1 AND (code LIKE ? OR name LIKE ?)
+        ORDER BY code ASC LIMIT 20
+    """, (f"%{term}%", f"%{term}%")).fetchall()
+    conn.close()
+    return [{"code": r["code"], "name": r["name"]} for r in rows]
+
+@app.get("/api/master/status")
+def get_master_status():
+    conn = get_db()
+    active_total = conn.execute("SELECT count(*) FROM materials WHERE active = 1").fetchone()[0]
+    last_v = conn.execute("SELECT * FROM master_versions ORDER BY version DESC LIMIT 1").fetchone()
+    conn.close()
+    last_version = None
+    if last_v:
+        last_version = {
+            "id": last_v["id"],
+            "version": last_v["version"],
+            "filename": last_v["filename"],
+            "mode": last_v["mode"],
+            "uploaded_by": last_v["uploaded_by"],
+            "uploaded_by_name": last_v["uploaded_by_name"],
+            "uploaded_at": last_v["uploaded_at"],
+            "active_total": last_v["active_total"]
+        }
+    return {"active_total": active_total, "last_version": last_version}
+
+@app.get("/api/master/versions")
+def get_master_versions():
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM master_versions ORDER BY version DESC").fetchall()
+    conn.close()
+    return [{
+        "id": r["id"],
+        "version": r["version"],
+        "filename": r["filename"],
+        "mode": r["mode"],
+        "uploaded_by": r["uploaded_by"],
+        "uploaded_by_name": r["uploaded_by_name"],
+        "uploaded_at": r["uploaded_at"],
+        "total_rows": r["total_rows"],
+        "valid_rows": r["valid_rows"],
+        "error_rows": r["error_rows"],
+        "inserted": r["inserted"],
+        "updated": r["updated"],
+        "deactivated": r["deactivated"],
+        "active_total": r["active_total"]
+    } for r in rows]
+
+CODE_ALIASES = ["kode material", "material code", "kode", "code", "material", "sku"]
+NAME_ALIASES = ["nama material", "deskripsi", "description", "material description", "nama"]
+
+@app.post("/api/master/preview")
+async def preview_master(file: UploadFile = File(...), admin: dict = Depends(require_admin)):
+    content = await file.read()
+    filename = file.filename or "upload.xlsx"
+    
+    try:
+        if filename.endswith(".csv"):
+            df = pd.read_csv(io.BytesIO(content), dtype=str)
+        else:
+            df = pd.read_excel(io.BytesIO(content), dtype=str)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Gagal membaca file: {str(e)}")
+
+    cols = list(df.columns)
+    code_col = None
+    name_col = None
+
+    for c in cols:
+        cl = str(c).strip().lower()
+        if not code_col and any(cl == a or cl.startswith(a) for a in CODE_ALIASES):
+            code_col = c
+        if not name_col and any(cl == a or cl.startswith(a) for a in NAME_ALIASES):
+            name_col = c
+
+    if not code_col:
+        code_col = cols[0] if len(cols) > 0 else "Kode Material"
+    if not name_col:
+        name_col = cols[1] if len(cols) > 1 else "Nama Material"
+
+    extra_cols = [c for c in cols if c not in (code_col, name_col)]
+
+    total_rows = len(df)
+    errors = []
+    valid_rows = []
+    seen_codes = set()
+
+    for idx, row in df.iterrows():
+        line = idx + 2  # Excel 1-based header is line 1
+        raw_code = str(row[code_col]).strip() if pd.notna(row[code_col]) else ""
+        raw_name = str(row[name_col]).strip() if pd.notna(row[name_col]) else ""
+
+        if not raw_code or raw_code.lower() == "nan":
+            errors.append({"line": line, "code": "", "message": f"Kode material kosong pada kolom '{code_col}'"})
+            continue
+        if not raw_name or raw_name.lower() == "nan":
+            errors.append({"line": line, "code": raw_code, "message": f"Nama material kosong pada kolom '{name_col}'"})
+            continue
+        if raw_code in seen_codes:
+            errors.append({"line": line, "code": raw_code, "message": f"Kode material duplikat dalam file ({raw_code})"})
+            continue
+
+        seen_codes.add(raw_code)
+        extra = {}
+        for ec in extra_cols:
+            val = row[ec]
+            extra[ec] = str(val).strip() if pd.notna(val) else ""
+        
+        valid_rows.append({
+            "line": line,
+            "code": raw_code,
+            "name": raw_name,
+            "extra": extra
+        })
+
+    # Stats vs existing
+    conn = get_db()
+    existing_codes = set(r[0] for r in conn.execute("SELECT code FROM materials WHERE active = 1").fetchall())
+    conn.close()
+
+    new_count = sum(1 for r in valid_rows if r["code"] not in existing_codes)
+    updated_count = sum(1 for r in valid_rows if r["code"] in existing_codes)
+    valid_set = set(r["code"] for r in valid_rows)
+    deactivate_if_replace = sum(1 for c in existing_codes if c not in valid_set)
+
+    preview_id = str(uuid.uuid4())
+    previews_cache[preview_id] = {
+        "filename": filename,
+        "valid_rows": valid_rows,
+        "total_rows": total_rows,
+        "error_rows": len(errors),
+        "code_col": code_col,
+        "name_col": name_col,
+        "extra_cols": extra_cols
+    }
+
+    return {
+        "preview_id": preview_id,
+        "total_rows": total_rows,
+        "valid_rows": len(valid_rows),
+        "error_rows": len(errors),
+        "stats": {
+            "new": new_count,
+            "updated": updated_count,
+            "deactivate_if_replace": deactivate_if_replace
+        },
+        "code_column": str(code_col),
+        "name_column": str(name_col),
+        "extra_columns": extra_cols,
+        "errors": errors[:100],
+        "sample": valid_rows[:50]
+    }
+
+class CommitMasterRequest(BaseModel):
+    preview_id: str
+    mode: str  # "upsert" or "replace"
+
+@app.post("/api/master/commit")
+def commit_master(req: CommitMasterRequest, admin: dict = Depends(require_admin)):
+    cached = previews_cache.get(req.preview_id)
+    if not cached:
+        raise HTTPException(status_code=400, detail="Data pratinjau sudah kadaluarsa. Silakan upload ulang.")
+    
+    valid_rows = cached["valid_rows"]
+    filename = cached["filename"]
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    version_id = str(uuid.uuid4())
+    
+    conn = get_db()
+    last_v = conn.execute("SELECT max(version) FROM master_versions").fetchone()[0] or 0
+    new_version = last_v + 1
+
+    existing_map = {r["code"]: r["id"] for r in conn.execute("SELECT code, id FROM materials").fetchall()}
+    active_codes = set(r[0] for r in conn.execute("SELECT code FROM materials WHERE active = 1").fetchall())
+
+    inserted = 0
+    updated = 0
+    deactivated = 0
+
+    incoming_codes = set()
+    for item in valid_rows:
+        code = item["code"]
+        name = item["name"]
+        extra_json = json.dumps(item["extra"])
+        incoming_codes.add(code)
+
+        if code in existing_map:
+            conn.execute("""
+                UPDATE materials SET name = ?, extra_json = ?, active = 1, version_id = ?, updated_at = ?
+                WHERE code = ?
+            """, (name, extra_json, version_id, now, code))
+            updated += 1
+        else:
+            mid = str(uuid.uuid4())
+            conn.execute("""
+                INSERT INTO materials (id, code, name, extra_json, active, version_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+            """, (mid, code, name, extra_json, version_id, now, now))
+            inserted += 1
+
+    if req.mode == "replace":
+        for code in active_codes:
+            if code not in incoming_codes:
+                conn.execute("UPDATE materials SET active = 0, updated_at = ? WHERE code = ?", (now, code))
+                deactivated += 1
+
+    active_total = conn.execute("SELECT count(*) FROM materials WHERE active = 1").fetchone()[0]
+
+    conn.execute("""
+        INSERT INTO master_versions 
+        (id, version, filename, mode, uploaded_by, uploaded_by_name, uploaded_at, total_rows, valid_rows, error_rows, inserted, updated, deactivated, active_total)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        version_id, new_version, filename, req.mode, admin["id"], admin["name"], now,
+        cached["total_rows"], len(valid_rows), cached["error_rows"], inserted, updated, deactivated, active_total
+    ))
+
+    conn.commit()
+    conn.close()
+
+    del previews_cache[req.preview_id]
+
+    mode_label = "Tambah/Update Data" if req.mode == "upsert" else "Ganti Data"
+    log_activity(admin["id"], admin["name"], "upload_master", "master_data", version_id,
+                 f"v{new_version} {filename} ({mode_label}): {inserted} baru, {updated} diperbarui, {deactivated} dinonaktifkan")
+
+    return {
+        "version": new_version,
+        "inserted": inserted,
+        "updated": updated,
+        "deactivated": deactivated,
+        "active_total": active_total
+    }
+
+@app.post("/api/master/versions/{version_id}/restore")
+def restore_master_version(version_id: str, admin: dict = Depends(require_admin)):
+    conn = get_db()
+    target_v = conn.execute("SELECT * FROM master_versions WHERE id = ?", (version_id,)).fetchone()
+    if not target_v:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Versi master data tidak ditemukan.")
+    
+    last_v = conn.execute("SELECT max(version) FROM master_versions").fetchone()[0] or 0
+    new_version = last_v + 1
+    new_version_id = str(uuid.uuid4())
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    conn.execute("UPDATE materials SET active = 0, updated_at = ?", (now,))
+    conn.execute("UPDATE materials SET active = 1, updated_at = ? WHERE version_id = ?", (now, version_id))
+    active_total = conn.execute("SELECT count(*) FROM materials WHERE active = 1").fetchone()[0]
+
+    conn.execute("""
+        INSERT INTO master_versions 
+        (id, version, filename, mode, uploaded_by, uploaded_by_name, uploaded_at, total_rows, valid_rows, error_rows, inserted, updated, deactivated, active_total)
+        VALUES (?, ?, ?, 'restore', ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)
+    """, (
+        new_version_id, new_version, f"Restore v{target_v['version']} ({target_v['filename']})",
+        admin["id"], admin["name"], now, active_total, active_total, active_total, 0, active_total
+    ))
+
+    conn.commit()
+    conn.close()
+
+    log_activity(admin["id"], admin["name"], "restore_master", "master_data", new_version_id,
+                 f"Pemulihan ke snapshot v{target_v['version']} (menjadi v{new_version})")
+
+    return {"version": new_version, "active_total": active_total}
+
+# ----------------- TALLY SHEETS -----------------
+def generate_doc_no(conn) -> str:
+    today_str = datetime.date.today().strftime("%Y%m%d")
+    prefix = f"TS-{today_str}-"
+    cur = conn.execute("SELECT doc_no FROM tally_sheets WHERE doc_no LIKE ? ORDER BY doc_no DESC LIMIT 1", (f"{prefix}%",))
+    row = cur.fetchone()
+    if row:
+        last_seq = int(row[0].split("-")[-1])
+        new_seq = last_seq + 1
+    else:
+        new_seq = 1
+    return f"{prefix}{new_seq:04d}"
+
+class TallyItemInput(BaseModel):
+    material_code: str
+    material_name: str
+    batch_fisik: Optional[str] = ""
+    supplier_batch: Optional[str] = ""
+    expired_date: Optional[str] = ""
+    production_date: Optional[str] = ""
+    pic_id: Optional[str] = ""
+
+class TallySheetInput(BaseModel):
+    action: str  # "draft" or "final"
+    items: List[TallyItemInput]
+
+def validate_items(conn, items: List[TallyItemInput], action: str, sheet_id: Optional[str] = None):
+    # Fetch settings
+    s_row = conn.execute("SELECT required_json, duplicate_rule FROM settings WHERE id = 'global'").fetchone()
+    settings = json.loads(s_row["required_json"]) if s_row else {}
+    duplicate_rule = s_row["duplicate_rule"] if s_row else "within_document"
+
+    errors = []
+    seen_within = {}
+
+    for i, it in enumerate(items):
+        if not it.material_code.strip():
+            errors.append({"row": i, "field": "material_code", "message": "Material wajib dipilih dari Master Data"})
+        else:
+            mat = conn.execute("SELECT code, name FROM materials WHERE code = ? AND active = 1", (it.material_code.strip(),)).fetchone()
+            if not mat:
+                errors.append({"row": i, "field": "material_code", "message": "Material tidak aktif atau tidak ada di Master Data"})
+
+        if it.expired_date and it.production_date and it.production_date > it.expired_date:
+            errors.append({"row": i, "field": "production_date", "message": "Production Date tidak boleh lebih besar dari Expired Date"})
+
+        if action == "final":
+            checks = {
+                "batch_fisik": (it.batch_fisik or "").strip(),
+                "supplier_batch": (it.supplier_batch or "").strip(),
+                "expired_date": (it.expired_date or "").strip(),
+                "production_date": (it.production_date or "").strip(),
+                "pic": (it.pic_id or "").strip()
+            }
+            labels = {
+                "batch_fisik": "Batch Fisik", "supplier_batch": "Supplier Batch",
+                "expired_date": "Expired Date", "production_date": "Production Date", "pic": "PIC"
+            }
+            for f, val in checks.items():
+                if settings.get(f) and not val:
+                    errors.append({"row": i, "field": f, "message": f"{labels[f]} wajib diisi"})
+
+        # Duplicate check
+        k = f"{it.material_code.strip().upper()}|{(it.batch_fisik or '').strip().upper()}|{(it.supplier_batch or '').strip().upper()}"
+        if duplicate_rule in ("within_document", "both"):
+            if k in seen_within:
+                errors.append({"row": i, "field": "batch_fisik", "message": f"Data ganda dengan baris {seen_within[k] + 1} (Kode + Batch Fisik + Supplier Batch)"})
+            else:
+                seen_within[k] = i
+
+        if duplicate_rule in ("across_final", "both") and it.material_code.strip():
+            sql = """
+                SELECT ts.doc_no FROM tally_items ti
+                JOIN tally_sheets ts ON ti.sheet_id = ts.id
+                WHERE ts.status = 'final'
+                AND upper(ti.material_code) = ?
+                AND upper(ti.batch_fisik) = ?
+                AND upper(ti.supplier_batch) = ?
+            """
+            params = [it.material_code.strip().upper(), (it.batch_fisik or "").strip().upper(), (it.supplier_batch or "").strip().upper()]
+            if sheet_id:
+                sql += " AND ts.id != ?"
+                params.append(sheet_id)
+            conflict = conn.execute(sql, params).fetchone()
+            if conflict:
+                errors.append({"row": i, "field": "batch_fisik", "message": f"Kombinasi ini sudah digunakan di dokumen Final {conflict[0]}"})
+
+    if errors:
+        raise HTTPException(status_code=400, detail={"errors": errors, "message": "Data belum valid. Periksa kolom yang ditandai merah."})
+
+@app.get("/api/tally-sheets")
+def get_tally_sheets(
+    q: str = "",
+    date: str = "",
+    material: str = "",
+    pic: str = "",
+    status: str = "",
+    page: int = 1,
+    limit: int = 15
+):
+    conn = get_db()
+    offset = (page - 1) * limit
+    where_clauses = ["1=1"]
+    params = []
+
+    if q.strip():
+        where_clauses.append("(ts.doc_no LIKE ? OR ts.created_by_name LIKE ? OR ts.id IN (SELECT sheet_id FROM tally_items WHERE material_code LIKE ? OR pic_name LIKE ?))")
+        q_wild = f"%{q.strip()}%"
+        params.extend([q_wild, q_wild, q_wild, q_wild])
+    if date.strip():
+        where_clauses.append("ts.created_at LIKE ?")
+        params.append(f"{date.strip()}%")
+    if material.strip():
+        where_clauses.append("ts.id IN (SELECT sheet_id FROM tally_items WHERE material_code LIKE ?)")
+        params.append(f"%{material.strip()}%")
+    if pic.strip():
+        where_clauses.append("ts.id IN (SELECT sheet_id FROM tally_items WHERE pic_name LIKE ?)")
+        params.append(f"%{pic.strip()}%")
+    if status.strip() and status != "all":
+        where_clauses.append("ts.status = ?")
+        params.append(status.strip())
+
+    where_str = " AND ".join(where_clauses)
+    total = conn.execute(f"SELECT count(*) FROM tally_sheets ts WHERE {where_str}", params).fetchone()[0]
+
+    rows = conn.execute(f"""
+        SELECT ts.*, count(ti.id) as item_count, group_concat(DISTINCT ti.pic_name) as pic_names
+        FROM tally_sheets ts
+        LEFT JOIN tally_items ti ON ts.id = ti.sheet_id
+        WHERE {where_str}
+        GROUP BY ts.id
+        ORDER BY ts.created_at DESC
+        LIMIT ? OFFSET ?
+    """, params + [limit, offset]).fetchall()
+
+    conn.close()
+
+    items = []
+    for r in rows:
+        pic_list = [p for p in (r["pic_names"] or "").split(",") if p]
+        items.append({
+            "id": r["id"],
+            "doc_no": r["doc_no"],
+            "status": r["status"],
+            "created_by": r["created_by"],
+            "created_by_name": r["created_by_name"],
+            "created_at": r["created_at"],
+            "updated_by": r["updated_by"],
+            "updated_by_name": r["updated_by_name"],
+            "updated_at": r["updated_at"],
+            "finalized_at": r["finalized_at"],
+            "finalized_by": r["finalized_by"],
+            "finalized_by_name": r["finalized_by_name"],
+            "cancelled_at": r["cancelled_at"],
+            "cancelled_by": r["cancelled_by"],
+            "cancelled_by_name": r["cancelled_by_name"],
+            "cancel_reason": r["cancel_reason"],
+            "item_count": r["item_count"],
+            "pic_names": pic_list
+        })
+
+    return {"items": items, "total": total, "page": page, "limit": limit}
+
+@app.post("/api/tally-sheets")
+def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_user)):
+    if not req.items:
+        raise HTTPException(status_code=400, detail="Minimal 1 baris material harus diisi.")
+    
+    conn = get_db()
+    validate_items(conn, req.items, req.action)
+
+    sheet_id = str(uuid.uuid4())
+    doc_no = generate_doc_no(conn)
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    status = "final" if req.action == "final" else "draft"
+
+    conn.execute("""
+        INSERT INTO tally_sheets 
+        (id, doc_no, status, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at,
+         finalized_at, finalized_by, finalized_by_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        sheet_id, doc_no, status, user["id"], user["name"], now, user["id"], user["name"], now,
+        now if status == "final" else None, user["id"] if status == "final" else None, user["name"] if status == "final" else None
+    ))
+
+    # Fetch users map for pic_name
+    u_map = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM users").fetchall()}
+
+    for idx, it in enumerate(req.items):
+        item_id = str(uuid.uuid4())
+        pic_name = u_map.get(it.pic_id, "")
+        conn.execute("""
+            INSERT INTO tally_items 
+            (id, sheet_id, seq, material_code, material_name, batch_fisik, supplier_batch, expired_date, production_date, pic_id, pic_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            item_id, sheet_id, idx + 1, it.material_code.strip(), it.material_name.strip(),
+            (it.batch_fisik or "").strip(), (it.supplier_batch or "").strip(),
+            (it.expired_date or "").strip(), (it.production_date or "").strip(),
+            (it.pic_id or "").strip(), pic_name
+        ))
+
+    # History
+    conn.execute("""
+        INSERT INTO tally_history (id, sheet_id, action, revision, at, by_name, by_id)
+        VALUES (?, ?, 'create', 1, ?, ?, ?)
+    """, (str(uuid.uuid4()), sheet_id, now, user["name"], user["id"]))
+
+    if status == "final":
+        conn.execute("""
+            INSERT INTO tally_history (id, sheet_id, action, revision, at, by_name, by_id)
+            VALUES (?, ?, 'finalize', 1, ?, ?, ?)
+        """, (str(uuid.uuid4()), sheet_id, now, user["name"], user["id"]))
+
+    conn.commit()
+    conn.close()
+
+    log_action = "finalize_tally" if status == "final" else "create_tally"
+    log_activity(user["id"], user["name"], log_action, "tally_sheet", sheet_id, f"Tally sheet {doc_no} ({status}) dengan {len(req.items)} item")
+
+    return {"id": sheet_id, "doc_no": doc_no, "status": status}
+
+@app.get("/api/tally-sheets/{sheet_id}")
+def get_tally_sheet(sheet_id: str):
+    conn = get_db()
+    sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ?", (sheet_id,)).fetchone()
+    if not sheet:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Tally sheet tidak ditemukan.")
+    
+    items = conn.execute("SELECT * FROM tally_items WHERE sheet_id = ? ORDER BY seq ASC", (sheet_id,)).fetchall()
+    conn.close()
+
+    item_list = []
+    pic_names = set()
+    for it in items:
+        if it["pic_name"]:
+            pic_names.add(it["pic_name"])
+        item_list.append({
+            "id": it["id"],
+            "sheet_id": it["sheet_id"],
+            "seq": it["seq"],
+            "material_code": it["material_code"],
+            "material_name": it["material_name"],
+            "batch_fisik": it["batch_fisik"],
+            "supplier_batch": it["supplier_batch"],
+            "expired_date": it["expired_date"],
+            "production_date": it["production_date"],
+            "pic_id": it["pic_id"],
+            "pic_name": it["pic_name"]
+        })
+
+    return {
+        "id": sheet["id"],
+        "doc_no": sheet["doc_no"],
+        "status": sheet["status"],
+        "created_by": sheet["created_by"],
+        "created_by_name": sheet["created_by_name"],
+        "created_at": sheet["created_at"],
+        "updated_by": sheet["updated_by"],
+        "updated_by_name": sheet["updated_by_name"],
+        "updated_at": sheet["updated_at"],
+        "finalized_at": sheet["finalized_at"],
+        "finalized_by": sheet["finalized_by"],
+        "finalized_by_name": sheet["finalized_by_name"],
+        "cancelled_at": sheet["cancelled_at"],
+        "cancelled_by": sheet["cancelled_by"],
+        "cancelled_by_name": sheet["cancelled_by_name"],
+        "cancel_reason": sheet["cancel_reason"],
+        "pic_names": list(pic_names),
+        "items": item_list
+    }
+
+@app.put("/api/tally-sheets/{sheet_id}")
+def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends(get_current_user)):
+    conn = get_db()
+    sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ?", (sheet_id,)).fetchone()
+    if not sheet:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Tally sheet tidak ditemukan.")
+    if sheet["status"] != "draft":
+        conn.close()
+        raise HTTPException(status_code=400, detail="Hanya dokumen Draft yang dapat diubah.")
+    if user["role"] != "admin" and sheet["created_by"] != user["id"]:
+        conn.close()
+        raise HTTPException(status_code=403, detail="Anda tidak memiliki izin mengubah dokumen ini.")
+
+    validate_items(conn, req.items, req.action, sheet_id=sheet_id)
+
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    new_status = "final" if req.action == "final" else "draft"
+
+    conn.execute("""
+        UPDATE tally_sheets 
+        SET status = ?, updated_by = ?, updated_by_name = ?, updated_at = ?,
+            finalized_at = ?, finalized_by = ?, finalized_by_name = ?
+        WHERE id = ?
+    """, (
+        new_status, user["id"], user["name"], now,
+        now if new_status == "final" else None, user["id"] if new_status == "final" else None, user["name"] if new_status == "final" else None,
+        sheet_id
+    ))
+
+    # Replace items
+    conn.execute("DELETE FROM tally_items WHERE sheet_id = ?", (sheet_id,))
+    u_map = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM users").fetchall()}
+
+    for idx, it in enumerate(req.items):
+        item_id = str(uuid.uuid4())
+        pic_name = u_map.get(it.pic_id, "")
+        conn.execute("""
+            INSERT INTO tally_items 
+            (id, sheet_id, seq, material_code, material_name, batch_fisik, supplier_batch, expired_date, production_date, pic_id, pic_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            item_id, sheet_id, idx + 1, it.material_code.strip(), it.material_name.strip(),
+            (it.batch_fisik or "").strip(), (it.supplier_batch or "").strip(),
+            (it.expired_date or "").strip(), (it.production_date or "").strip(),
+            (it.pic_id or "").strip(), pic_name
+        ))
+
+    # Revisions count
+    rev_count = conn.execute("SELECT count(*) FROM tally_history WHERE sheet_id = ?", (sheet_id,)).fetchone()[0] or 1
+    next_rev = rev_count + 1
+
+    action_name = "finalize" if new_status == "final" else "update"
+    conn.execute("""
+        INSERT INTO tally_history (id, sheet_id, action, revision, at, by_name, by_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (str(uuid.uuid4()), sheet_id, action_name, next_rev, now, user["name"], user["id"]))
+
+    conn.commit()
+    conn.close()
+
+    log_action = "finalize_tally" if new_status == "final" else "update_tally"
+    log_activity(user["id"], user["name"], log_action, "tally_sheet", sheet_id, f"Tally sheet {sheet['doc_no']} ({new_status}) diperbarui")
+
+    return {"id": sheet_id, "doc_no": sheet["doc_no"], "status": new_status}
+
+class CancelRequest(BaseModel):
+    reason: str
+
+@app.post("/api/tally-sheets/{sheet_id}/cancel")
+def cancel_tally_sheet(sheet_id: str, req: CancelRequest, user: dict = Depends(get_current_user)):
+    conn = get_db()
+    sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ?", (sheet_id,)).fetchone()
+    if not sheet:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Tally sheet tidak ditemukan.")
+    if sheet["status"] == "cancelled":
+        conn.close()
+        raise HTTPException(status_code=400, detail="Dokumen sudah dibatalkan sebelumnya.")
+    if user["role"] != "admin" and (sheet["status"] != "draft" or sheet["created_by"] != user["id"]):
+        conn.close()
+        raise HTTPException(status_code=403, detail="Hanya Admin atau pembuat draft yang dapat membatalkan dokumen.")
+
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    conn.execute("""
+        UPDATE tally_sheets 
+        SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ?, cancel_reason = ?
+        WHERE id = ?
+    """, (now, user["id"], user["name"], req.reason.strip(), sheet_id))
+
+    rev_count = conn.execute("SELECT count(*) FROM tally_history WHERE sheet_id = ?", (sheet_id,)).fetchone()[0] or 1
+    conn.execute("""
+        INSERT INTO tally_history (id, sheet_id, action, revision, at, by_name, by_id)
+        VALUES (?, ?, 'cancel', ?, ?, ?, ?)
+    """, (str(uuid.uuid4()), sheet_id, rev_count + 1, now, user["name"], user["id"]))
+
+    conn.commit()
+    conn.close()
+
+    log_activity(user["id"], user["name"], "cancel_tally", "tally_sheet", sheet_id, f"Tally sheet {sheet['doc_no']} dibatalkan: {req.reason.strip()}")
+    return {"message": "Tally sheet berhasil dibatalkan"}
+
+@app.get("/api/tally-sheets/{sheet_id}/history")
+def get_tally_history(sheet_id: str):
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM tally_history WHERE sheet_id = ? ORDER BY revision ASC", (sheet_id,)).fetchall()
+    conn.close()
+    return [{
+        "id": r["id"],
+        "sheet_id": r["sheet_id"],
+        "action": r["action"],
+        "revision": r["revision"],
+        "at": r["at"],
+        "by_name": r["by_name"],
+        "by_id": r["by_id"]
+    } for r in rows]
+
+# ----------------- EXCEL EXPORT -----------------
+@app.get("/api/tally-sheets/{sheet_id}/export")
+def export_tally_sheet(sheet_id: str):
+    conn = get_db()
+    sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ?", (sheet_id,)).fetchone()
+    if not sheet:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Tally sheet tidak ditemukan.")
+    
+    items = conn.execute("SELECT * FROM tally_items WHERE sheet_id = ? ORDER BY seq ASC", (sheet_id,)).fetchall()
+    conn.close()
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Tally Sheet"
+
+    # Header styling
+    title_font = Font(name="Arial", size=14, bold=True, color="0B2149")
+    meta_font = Font(name="Arial", size=10)
+    meta_bold = Font(name="Arial", size=10, bold=True)
+    th_font = Font(name="Arial", size=10, bold=True, color="FFFFFF")
+    th_fill = PatternFill(start_color="0B2149", end_color="0B2149", fill_type="solid")
+    border_thin = Border(
+        left=Side(style='thin', color='D3D3D3'),
+        right=Side(style='thin', color='D3D3D3'),
+        top=Side(style='thin', color='D3D3D3'),
+        bottom=Side(style='thin', color='D3D3D3')
+    )
+
+    ws.merge_cells("A1:H1")
+    ws["A1"] = "TALLY SHEET MATERIAL"
+    ws["A1"].font = title_font
+    ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
+
+    ws["A3"] = "No. Dokumen:"
+    ws["A3"].font = meta_bold
+    ws["B3"] = sheet["doc_no"]
+    ws["B3"].font = meta_font
+
+    ws["E3"] = "Tanggal:"
+    ws["E3"].font = meta_bold
+    ws["F3"] = sheet["created_at"][:10]
+    ws["F3"].font = meta_font
+
+    ws["A4"] = "Status:"
+    ws["A4"].font = meta_bold
+    ws["B4"] = sheet["status"].upper()
+    ws["B4"].font = meta_font
+
+    ws["E4"] = "Dibuat Oleh:"
+    ws["E4"].font = meta_bold
+    ws["F4"] = sheet["created_by_name"]
+    ws["F4"].font = meta_font
+
+    headers = ["No. Urut", "Kode Material", "Nama Material", "Batch Fisik", "Supplier Batch", "Expired Date", "Production Date", "PIC"]
+    row_idx = 6
+
+    for col_idx, h in enumerate(headers, start=1):
+        cell = ws.cell(row=row_idx, column=col_idx, value=h)
+        cell.font = th_font
+        cell.fill = th_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    for it in items:
+        row_idx += 1
+        ws.cell(row=row_idx, column=1, value=it["seq"]).alignment = Alignment(horizontal="center")
+        ws.cell(row=row_idx, column=2, value=it["material_code"]).alignment = Alignment(horizontal="center")
+        ws.cell(row=row_idx, column=3, value=it["material_name"])
+        ws.cell(row=row_idx, column=4, value=it["batch_fisik"])
+        ws.cell(row=row_idx, column=5, value=it["supplier_batch"])
+        ws.cell(row=row_idx, column=6, value=it["expired_date"]).alignment = Alignment(horizontal="center")
+        ws.cell(row=row_idx, column=7, value=it["production_date"]).alignment = Alignment(horizontal="center")
+        ws.cell(row=row_idx, column=8, value=it["pic_name"])
+
+        for col_idx in range(1, 9):
+            ws.cell(row=row_idx, column=col_idx).border = border_thin
+
+    # Column widths
+    col_widths = [10, 18, 35, 18, 18, 15, 15, 20]
+    for col_idx, width in enumerate(col_widths, start=1):
+        col_letter = openpyxl.utils.get_column_letter(col_idx)
+        ws.column_dimensions[col_letter].width = width
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"TallySheet_{sheet['doc_no']}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+# ----------------- ACTIVITY LOGS -----------------
+@app.get("/api/activity")
+def get_activity_logs(q: str = "", entity: str = "", page: int = 1, limit: int = 25, admin: dict = Depends(require_admin)):
+    conn = get_db()
+    offset = (page - 1) * limit
+    where_clauses = ["1=1"]
+    params = []
+
+    if q.strip():
+        where_clauses.append("(user_name LIKE ? OR details LIKE ? OR action LIKE ?)")
+        q_wild = f"%{q.strip()}%"
+        params.extend([q_wild, q_wild, q_wild])
+    if entity.strip() and entity != "all":
+        where_clauses.append("entity = ?")
+        params.append(entity.strip())
+
+    where_str = " AND ".join(where_clauses)
+    total = conn.execute(f"SELECT count(*) FROM activity_logs WHERE {where_str}", params).fetchone()[0]
+
+    rows = conn.execute(f"""
+        SELECT * FROM activity_logs WHERE {where_str}
+        ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
+    """, params + [limit, offset]).fetchall()
+    conn.close()
+
+    items = [{
+        "id": r["id"],
+        "user_id": r["user_id"],
+        "user_name": r["user_name"],
+        "action": r["action"],
+        "entity": r["entity"],
+        "entity_id": r["entity_id"],
+        "details": r["details"],
+        "created_at": r["created_at"]
+    } for r in rows]
+
+    return {"items": items, "total": total, "page": page, "limit": limit}
+
+# Startup hook
+@app.on_event("startup")
+def on_startup():
+    init_db()
+
+if __name__ == "__main__":
+    import uvicorn
+    init_db()
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
