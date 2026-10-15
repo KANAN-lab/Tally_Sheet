@@ -45,6 +45,8 @@ Dokumen ini melacak status pengerjaan fitur, perbaikan bug, arsitektur sistem, d
   - Komponen `Skeleton`, `TableSkeleton`, dan `DetailSkeleton` diimplementasikan pada Dashboard, Daftar Tally, dan Detail Dokumen untuk pengalaman navigasi yang mulus tanpa kedip layout.
 - [x] **Template Cetak A4 (Print Tally Sheet)**:
   - Menampilkan Nomor Surat Jalan (SJ), Nomor PO SAP, Nomor Polisi Armada Truk, status "SELESAI (STOCK TER-UU)", serta 3 kolom tanda tangan peran: *Checker (Pembuat)*, *Admin Warehouse (Verifikasi)*, dan *Quality Control (Disetujui / Stock UU)*.
+- [x] **Perbaikan Seleksi Dropdown Kode Material**:
+  - Memperbaiki signature pemanggilan `update(i, patch)` pada komponen `TallyRow` serta menambahkan defensive null check pada `Object.keys()` sehingga pemilihan item dari dropdown `MaterialSearch` dan `SupplierSearch` berjalan lancar tanpa error `TypeError: Cannot convert undefined or null to object`.
 
 ### C. Arsitektur OOP & Zero Hardcoding
 - [x] **Backend Domain Service**:
