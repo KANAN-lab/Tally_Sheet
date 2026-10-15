@@ -27,11 +27,13 @@ export function pctChange(cur, prev) {
 }
 
 export function canEdit(sheet, user) {
-  return sheet?.status === "draft" && (user?.role === "admin" || sheet.created_by === user?.id);
+  if (!sheet) return false;
+  if (sheet.status === "cancelled" || sheet.status === "completed" || sheet.status === "final") return false;
+  return user?.role === "admin" || sheet.status === "draft" || sheet.status === "admin_hold";
 }
 
 export function canCancel(sheet, user) {
-  if (!sheet || sheet.status === "cancelled") return false;
+  if (!sheet || sheet.status === "cancelled" || sheet.status === "completed") return false;
   return user?.role === "admin" || (sheet.status === "draft" && sheet.created_by === user?.id);
 }
 

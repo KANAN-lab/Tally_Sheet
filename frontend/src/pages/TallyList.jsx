@@ -58,9 +58,16 @@ export default function TallyList() {
           <SelectTrigger className="bg-white" data-testid="tally-list-status-filter"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Semua Status</SelectItem>
-            <SelectItem value="draft">Draft</SelectItem>
-            <SelectItem value="final">Final</SelectItem>
-            <SelectItem value="cancelled">Cancelled</SelectItem>
+            <SelectItem value="draft">Draft (Checker)</SelectItem>
+            <SelectItem value="waiting_admin_1">Menunggu Admin WH</SelectItem>
+            <SelectItem value="admin_hold">Pending Admin WH</SelectItem>
+            <SelectItem value="waiting_qc">Dalam QC</SelectItem>
+            <SelectItem value="qc_hold">Pending QC (COA/Lab)</SelectItem>
+            <SelectItem value="qc_rejected">Ditolak QC</SelectItem>
+            <SelectItem value="waiting_gr">Siap Posting GR</SelectItem>
+            <SelectItem value="gr_hold">Pending Posting GR</SelectItem>
+            <SelectItem value="completed">Selesai (GR Posted)</SelectItem>
+            <SelectItem value="cancelled">Dibatalkan</SelectItem>
           </SelectContent>
         </Select>
         <div className="flex gap-2">

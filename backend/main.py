@@ -284,6 +284,54 @@ def init_db():
     except Exception as e:
         print("Notice: check tally_items columns:", e)
 
+    # Ensure columns exist in tally_sheets (Header & Workflow Traceability)
+    try:
+        sheet_cols = [col[1] for col in c.execute("PRAGMA table_info(tally_sheets)").fetchall()]
+        new_sheet_cols = [
+            ("delivery_note_no", "TEXT DEFAULT ''"),
+            ("po_no", "TEXT DEFAULT ''"),
+            ("supplier_code", "TEXT DEFAULT ''"),
+            ("supplier_name", "TEXT DEFAULT ''"),
+            ("arrival_date", "TEXT DEFAULT ''"),
+            ("driver_name", "TEXT DEFAULT ''"),
+            ("truck_plate", "TEXT DEFAULT ''"),
+            ("current_handler_role", "TEXT DEFAULT 'checker'"),
+            ("current_handler_name", "TEXT DEFAULT ''"),
+            ("pending_reason", "TEXT DEFAULT ''"),
+            ("pending_category", "TEXT DEFAULT ''"),
+            ("qc_status", "TEXT DEFAULT ''"),
+            ("qc_notes", "TEXT DEFAULT ''"),
+            ("qc_by_name", "TEXT DEFAULT ''"),
+            ("qc_by_id", "TEXT DEFAULT ''"),
+            ("qc_at", "TEXT DEFAULT ''"),
+            ("gr_no", "TEXT DEFAULT ''"),
+            ("gr_by_name", "TEXT DEFAULT ''"),
+            ("gr_by_id", "TEXT DEFAULT ''"),
+            ("gr_at", "TEXT DEFAULT ''"),
+            ("gr_notes", "TEXT DEFAULT ''"),
+        ]
+        for col_name, col_type in new_sheet_cols:
+            if col_name not in sheet_cols:
+                c.execute(f"ALTER TABLE tally_sheets ADD COLUMN {col_name} {col_type}")
+    except Exception as e:
+        print("Notice: check tally_sheets columns:", e)
+
+    # Ensure columns exist in tally_history (Traceability details)
+    try:
+        hist_cols = [col[1] for col in c.execute("PRAGMA table_info(tally_history)").fetchall()]
+        new_hist_cols = [
+            ("from_status", "TEXT DEFAULT ''"),
+            ("to_status", "TEXT DEFAULT ''"),
+            ("category", "TEXT DEFAULT ''"),
+            ("reason", "TEXT DEFAULT ''"),
+            ("by_role", "TEXT DEFAULT ''"),
+        ]
+        for col_name, col_type in new_hist_cols:
+            if col_name not in hist_cols:
+                c.execute(f"ALTER TABLE tally_history ADD COLUMN {col_name} {col_type}")
+    except Exception as e:
+        print("Notice: check tally_history columns:", e)
+
     # Seed Suppliers from Master Data if empty
     SUPPLIER_FILE = Path(__file__).resolve().parent.parent / "Master Data" / "Tcode MKVZ.XLSX"
     try:
@@ -377,6 +425,18 @@ def init_db():
             1,
             now
         ))
+
+        # Seed Workflow Roles (Checker, QC, Warehouse Admin)
+        for u_id, u_email, u_name, u_role in [
+            ("c1111111-1111-4111-8111-111111111111", "checker@tally.com", "Budi Checker", "checker"),
+            ("q2222222-2222-4222-8222-222222222222", "qc@tally.com", "Rina QC Inspector", "qc"),
+            ("w3333333-3333-4333-8333-333333333333", "warehouse@tally.com", "Hendra Admin WH", "warehouse_admin"),
+        ]:
+            if not c.execute("SELECT id FROM users WHERE email = ?", (u_email,)).fetchone():
+                c.execute("""
+                    INSERT INTO users (id, email, name, password_hash, role, is_pic, active, created_at)
+                    VALUES (?, ?, ?, ?, ?, 1, 1, ?)
+                """, (u_id, u_email, u_name, hash_password("Admin123!"), u_role, now))
 
     # Seed materials from dump if empty
     cur = c.execute("SELECT count(*) FROM materials")
@@ -1164,8 +1224,22 @@ class TallyItemInput(BaseModel):
     pic_name: Optional[str] = ""
 
 class TallySheetInput(BaseModel):
-    action: str  # "draft" or "final"
+    delivery_note_no: Optional[str] = ""
+    po_no: Optional[str] = ""
+    supplier_code: Optional[str] = ""
+    supplier_name: Optional[str] = ""
+    arrival_date: Optional[str] = ""
+    driver_name: Optional[str] = ""
+    truck_plate: Optional[str] = ""
+    action: str = "draft"  # "draft" | "submit_to_admin" | "final"
     items: List[TallyItemInput]
+
+class WorkflowTransitionInput(BaseModel):
+    action: str  # "submit_to_admin", "admin_hold", "send_to_qc", "qc_hold", "qc_approve", "qc_reject", "admin_gr_hold", "post_gr", "return_to_checker"
+    category: Optional[str] = ""
+    reason: Optional[str] = ""
+    gr_no: Optional[str] = ""
+    qc_notes: Optional[str] = ""
 
 def validate_items(conn, items: List[TallyItemInput], action: str, sheet_id: Optional[str] = None):
     # Fetch settings
@@ -1187,7 +1261,7 @@ def validate_items(conn, items: List[TallyItemInput], action: str, sheet_id: Opt
         if it.expired_date and it.production_date and it.production_date > it.expired_date:
             errors.append({"row": i, "field": "production_date", "message": "Production Date tidak boleh lebih besar dari Expired Date"})
 
-        if action == "final":
+        if action in ("final", "submit_to_admin"):
             checks = {
                 "batch_fisik": (it.batch_fisik or "").strip(),
                 "supplier_batch": (it.supplier_batch or "").strip(),
@@ -1215,7 +1289,7 @@ def validate_items(conn, items: List[TallyItemInput], action: str, sheet_id: Opt
             sql = """
                 SELECT ts.doc_no FROM tally_items ti
                 JOIN tally_sheets ts ON ti.sheet_id = ts.id
-                WHERE ts.status = 'final'
+                WHERE ts.status IN ('completed', 'final')
                 AND upper(ti.material_code) = ?
                 AND upper(ti.batch_fisik) = ?
                 AND upper(ti.supplier_batch) = ?
@@ -1248,9 +1322,9 @@ def get_tally_sheets(
     params = []
 
     if q.strip():
-        where_clauses.append("(ts.doc_no LIKE ? OR ts.created_by_name LIKE ? OR ts.id IN (SELECT sheet_id FROM tally_items WHERE material_code LIKE ? OR pic_name LIKE ?))")
+        where_clauses.append("(ts.doc_no LIKE ? OR ts.created_by_name LIKE ? OR ts.delivery_note_no LIKE ? OR ts.po_no LIKE ? OR ts.supplier_name LIKE ? OR ts.id IN (SELECT sheet_id FROM tally_items WHERE material_code LIKE ? OR pic_name LIKE ?))")
         q_wild = f"%{q.strip()}%"
-        params.extend([q_wild, q_wild, q_wild, q_wild])
+        params.extend([q_wild, q_wild, q_wild, q_wild, q_wild, q_wild, q_wild])
     if date.strip():
         where_clauses.append("ts.created_at LIKE ?")
         params.append(f"{date.strip()}%")
@@ -1286,6 +1360,19 @@ def get_tally_sheets(
             "id": r["id"],
             "doc_no": r["doc_no"],
             "status": r["status"],
+            "delivery_note_no": r["delivery_note_no"] if "delivery_note_no" in r.keys() else "",
+            "po_no": r["po_no"] if "po_no" in r.keys() else "",
+            "supplier_code": r["supplier_code"] if "supplier_code" in r.keys() else "",
+            "supplier_name": r["supplier_name"] if "supplier_name" in r.keys() else "",
+            "arrival_date": r["arrival_date"] if "arrival_date" in r.keys() else "",
+            "driver_name": r["driver_name"] if "driver_name" in r.keys() else "",
+            "truck_plate": r["truck_plate"] if "truck_plate" in r.keys() else "",
+            "current_handler_role": r["current_handler_role"] if "current_handler_role" in r.keys() else "checker",
+            "current_handler_name": r["current_handler_name"] if "current_handler_name" in r.keys() else "",
+            "pending_reason": r["pending_reason"] if "pending_reason" in r.keys() else "",
+            "pending_category": r["pending_category"] if "pending_category" in r.keys() else "",
+            "qc_status": r["qc_status"] if "qc_status" in r.keys() else "",
+            "gr_no": r["gr_no"] if "gr_no" in r.keys() else "",
             "created_by": r["created_by"],
             "created_by_name": r["created_by_name"],
             "created_at": r["created_at"],
@@ -1316,16 +1403,41 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
     sheet_id = str(uuid.uuid4())
     doc_no = generate_doc_no(conn)
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    status = "final" if req.action == "final" else "draft"
+    
+    # Workflow Status determination
+    if req.action == "submit_to_admin":
+        status = "waiting_admin_1"
+        handler_role = "admin"
+        handler_name = ""
+    elif req.action == "final":
+        status = "completed"
+        handler_role = "closed"
+        handler_name = ""
+    else:
+        status = "draft"
+        handler_role = "checker"
+        handler_name = user["name"]
+
+    delivery_note = (req.delivery_note_no or "").strip()
+    po_num = (req.po_no or "").strip()
+    sup_code = (req.supplier_code or "").strip()
+    sup_name = (req.supplier_name or "").strip()
+    arr_date = (req.arrival_date or "").strip() or now[:10]
+    drv_name = (req.driver_name or "").strip()
+    trk_plate = (req.truck_plate or "").strip()
 
     conn.execute("""
         INSERT INTO tally_sheets 
         (id, doc_no, status, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at,
-         finalized_at, finalized_by, finalized_by_name)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         finalized_at, finalized_by, finalized_by_name,
+         delivery_note_no, po_no, supplier_code, supplier_name, arrival_date, driver_name, truck_plate,
+         current_handler_role, current_handler_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         sheet_id, doc_no, status, user["id"], user["name"], now, user["id"], user["name"], now,
-        now if status == "final" else None, user["id"] if status == "final" else None, user["name"] if status == "final" else None
+        now if status == "completed" else None, user["id"] if status == "completed" else None, user["name"] if status == "completed" else None,
+        delivery_note, po_num, sup_code, sup_name, arr_date, drv_name, trk_plate,
+        handler_role, handler_name
     ))
 
     # Fetch users map for pic_name
@@ -1343,7 +1455,7 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
         """, (
             item_id, sheet_id, idx + 1, it.material_code.strip(), it.material_name.strip(),
             (it.uom or "").strip(), float(it.qty or 0),
-            (it.supplier_code or "").strip(), (it.supplier_name or "").strip(),
+            (it.supplier_code or sup_code).strip(), (it.supplier_name or sup_name).strip(),
             (it.batch_fisik or "").strip(), (it.supplier_batch or "").strip(),
             (it.expired_date or "").strip(), (it.production_date or "").strip(),
             pic_id, pic_name
@@ -1352,24 +1464,19 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
             "id": item_id, "sheet_id": sheet_id, "seq": idx + 1,
             "material_code": it.material_code.strip(), "material_name": it.material_name.strip(),
             "uom": (it.uom or "").strip(), "qty": float(it.qty or 0),
-            "supplier_code": (it.supplier_code or "").strip(), "supplier_name": (it.supplier_name or "").strip(),
+            "supplier_code": (it.supplier_code or sup_code).strip(), "supplier_name": (it.supplier_name or sup_name).strip(),
             "batch_fisik": (it.batch_fisik or "").strip(), "supplier_batch": (it.supplier_batch or "").strip(),
             "expired_date": (it.expired_date or "").strip(), "production_date": (it.production_date or "").strip(),
             "pic_id": pic_id, "pic_name": pic_name
         })
 
-    # History
+    # History Traceability Log
     hist_id = str(uuid.uuid4())
+    initial_reason = "Dokumen tally sheet dibuat oleh Checker" if status == "draft" else "Dokumen diserahkan ke Admin Warehouse"
     conn.execute("""
-        INSERT INTO tally_history (id, sheet_id, action, revision, at, by_name, by_id)
-        VALUES (?, ?, 'create', 1, ?, ?, ?)
-    """, (hist_id, sheet_id, now, user["name"], user["id"]))
-
-    if status == "final":
-        conn.execute("""
-            INSERT INTO tally_history (id, sheet_id, action, revision, at, by_name, by_id)
-            VALUES (?, ?, 'finalize', 1, ?, ?, ?)
-        """, (str(uuid.uuid4()), sheet_id, now, user["name"], user["id"]))
+        INSERT INTO tally_history (id, sheet_id, action, revision, at, by_name, by_id, by_role, from_status, to_status, category, reason)
+        VALUES (?, ?, ?, 1, ?, ?, ?, ?, '', ?, '', ?)
+    """, (hist_id, sheet_id, req.action, now, user["name"], user["id"], user.get("role", "checker"), status, initial_reason))
 
     conn.commit()
     conn.close()
@@ -1377,16 +1484,24 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
     # Sync to Supabase cloud
     sb_sheet = {
         "id": sheet_id, "doc_no": doc_no, "status": status,
+        "delivery_note_no": delivery_note, "po_no": po_num,
+        "supplier_code": sup_code, "supplier_name": sup_name,
+        "arrival_date": arr_date, "driver_name": drv_name, "truck_plate": trk_plate,
+        "current_handler_role": handler_role, "current_handler_name": handler_name,
         "created_by": user["id"], "created_by_name": user["name"], "created_at": now,
         "updated_by": user["id"], "updated_by_name": user["name"], "updated_at": now,
-        "finalized_at": now if status == "final" else None,
-        "finalized_by": user["id"] if status == "final" else None,
-        "finalized_by_name": user["name"] if status == "final" else None
+        "finalized_at": now if status == "completed" else None,
+        "finalized_by": user["id"] if status == "completed" else None,
+        "finalized_by_name": user["name"] if status == "completed" else None
     }
-    sync_tally_to_supabase(sb_sheet, sb_items, {"id": hist_id, "sheet_id": sheet_id, "action": "create", "revision": 1, "at": now, "by_name": user["name"], "by_id": user["id"]})
+    sync_tally_to_supabase(sb_sheet, sb_items, {
+        "id": hist_id, "sheet_id": sheet_id, "action": req.action, "revision": 1, "at": now,
+        "by_name": user["name"], "by_id": user["id"], "by_role": user.get("role", "checker"),
+        "from_status": "", "to_status": status, "category": "", "reason": initial_reason
+    })
 
-    log_action = "finalize_tally" if status == "final" else "create_tally"
-    log_activity(user["id"], user["name"], log_action, "tally_sheet", sheet_id, f"Tally sheet {doc_no} ({status}) dengan {len(req.items)} item")
+    log_action = "submit_tally" if status == "waiting_admin_1" else ("create_tally" if status == "draft" else "finalize_tally")
+    log_activity(user["id"], user["name"], log_action, "tally_sheet", sheet_id, f"Tally sheet {doc_no} ({status}) dengan {len(req.items)} item. SJ: {delivery_note}, PO: {po_num}")
 
     return {"id": sheet_id, "doc_no": doc_no, "status": status}
 
@@ -1432,6 +1547,25 @@ def get_tally_sheet(sheet_id: str):
         "id": sheet["id"],
         "doc_no": sheet["doc_no"],
         "status": sheet["status"],
+        "delivery_note_no": sheet["delivery_note_no"] if "delivery_note_no" in sheet.keys() else "",
+        "po_no": sheet["po_no"] if "po_no" in sheet.keys() else "",
+        "supplier_code": sheet["supplier_code"] if "supplier_code" in sheet.keys() else "",
+        "supplier_name": sheet["supplier_name"] if "supplier_name" in sheet.keys() else "",
+        "arrival_date": sheet["arrival_date"] if "arrival_date" in sheet.keys() else "",
+        "driver_name": sheet["driver_name"] if "driver_name" in sheet.keys() else "",
+        "truck_plate": sheet["truck_plate"] if "truck_plate" in sheet.keys() else "",
+        "current_handler_role": sheet["current_handler_role"] if "current_handler_role" in sheet.keys() else "checker",
+        "current_handler_name": sheet["current_handler_name"] if "current_handler_name" in sheet.keys() else "",
+        "pending_reason": sheet["pending_reason"] if "pending_reason" in sheet.keys() else "",
+        "pending_category": sheet["pending_category"] if "pending_category" in sheet.keys() else "",
+        "qc_status": sheet["qc_status"] if "qc_status" in sheet.keys() else "",
+        "qc_notes": sheet["qc_notes"] if "qc_notes" in sheet.keys() else "",
+        "qc_by_name": sheet["qc_by_name"] if "qc_by_name" in sheet.keys() else "",
+        "qc_at": sheet["qc_at"] if "qc_at" in sheet.keys() else "",
+        "gr_no": sheet["gr_no"] if "gr_no" in sheet.keys() else "",
+        "gr_by_name": sheet["gr_by_name"] if "gr_by_name" in sheet.keys() else "",
+        "gr_at": sheet["gr_at"] if "gr_at" in sheet.keys() else "",
+        "gr_notes": sheet["gr_notes"] if "gr_notes" in sheet.keys() else "",
         "created_by": sheet["created_by"],
         "created_by_name": sheet["created_by_name"],
         "created_at": sheet["created_at"],
@@ -1452,35 +1586,62 @@ def get_tally_sheet(sheet_id: str):
 @app.put("/api/tally-sheets/{sheet_id}")
 def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends(get_current_user)):
     conn = get_db()
-    sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ?", (sheet_id,)).fetchone()
+    sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
+    if not sheet:
+        sync_from_supabase_if_needed(conn, sheet_id=sheet_id)
+        sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
     if not sheet:
         conn.close()
         raise HTTPException(status_code=404, detail="Tally sheet tidak ditemukan.")
-    if sheet["status"] != "draft":
+    
+    if sheet["status"] not in ("draft", "admin_hold"):
         conn.close()
-        raise HTTPException(status_code=400, detail="Hanya dokumen Draft yang dapat diubah.")
-    if user["role"] != "admin" and sheet["created_by"] != user["id"]:
-        conn.close()
-        raise HTTPException(status_code=403, detail="Anda tidak memiliki izin mengubah dokumen ini.")
-
-    validate_items(conn, req.items, req.action, sheet_id=sheet_id)
+        raise HTTPException(status_code=400, detail="Hanya dokumen Draft atau Revisi yang dapat diubah barisnya.")
+    
+    validate_items(conn, req.items, req.action, sheet_id=sheet["id"])
 
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    new_status = "final" if req.action == "final" else "draft"
+    actual_id = sheet["id"]
+
+    if req.action == "submit_to_admin":
+        new_status = "waiting_admin_1"
+        handler_role = "admin"
+        handler_name = ""
+    elif req.action == "final":
+        new_status = "completed"
+        handler_role = "closed"
+        handler_name = ""
+    else:
+        new_status = "draft"
+        handler_role = "checker"
+        handler_name = user["name"]
+
+    delivery_note = (req.delivery_note_no or sheet["delivery_note_no"] or "").strip()
+    po_num = (req.po_no or sheet["po_no"] or "").strip()
+    sup_code = (req.supplier_code or sheet["supplier_code"] or "").strip()
+    sup_name = (req.supplier_name or sheet["supplier_name"] or "").strip()
+    arr_date = (req.arrival_date or sheet["arrival_date"] or "").strip() or now[:10]
+    drv_name = (req.driver_name or sheet["driver_name"] or "").strip()
+    trk_plate = (req.truck_plate or sheet["truck_plate"] or "").strip()
 
     conn.execute("""
         UPDATE tally_sheets 
         SET status = ?, updated_by = ?, updated_by_name = ?, updated_at = ?,
-            finalized_at = ?, finalized_by = ?, finalized_by_name = ?
+            finalized_at = ?, finalized_by = ?, finalized_by_name = ?,
+            delivery_note_no = ?, po_no = ?, supplier_code = ?, supplier_name = ?,
+            arrival_date = ?, driver_name = ?, truck_plate = ?,
+            current_handler_role = ?, current_handler_name = ?
         WHERE id = ?
     """, (
         new_status, user["id"], user["name"], now,
-        now if new_status == "final" else None, user["id"] if new_status == "final" else None, user["name"] if new_status == "final" else None,
-        sheet_id
+        now if new_status == "completed" else None, user["id"] if new_status == "completed" else None, user["name"] if new_status == "completed" else None,
+        delivery_note, po_num, sup_code, sup_name, arr_date, drv_name, trk_plate,
+        handler_role, handler_name,
+        actual_id
     ))
 
     # Replace items
-    conn.execute("DELETE FROM tally_items WHERE sheet_id = ?", (sheet_id,))
+    conn.execute("DELETE FROM tally_items WHERE sheet_id = ?", (actual_id,))
     u_map = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM users").fetchall()}
 
     sb_items = []
@@ -1493,51 +1654,242 @@ def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends
             (id, sheet_id, seq, material_code, material_name, uom, qty, supplier_code, supplier_name, batch_fisik, supplier_batch, expired_date, production_date, pic_id, pic_name)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            item_id, sheet_id, idx + 1, it.material_code.strip(), it.material_name.strip(),
+            item_id, actual_id, idx + 1, it.material_code.strip(), it.material_name.strip(),
             (it.uom or "").strip(), float(it.qty or 0),
-            (it.supplier_code or "").strip(), (it.supplier_name or "").strip(),
+            (it.supplier_code or sup_code).strip(), (it.supplier_name or sup_name).strip(),
             (it.batch_fisik or "").strip(), (it.supplier_batch or "").strip(),
             (it.expired_date or "").strip(), (it.production_date or "").strip(),
             pic_id, pic_name
         ))
         sb_items.append({
-            "id": item_id, "sheet_id": sheet_id, "seq": idx + 1,
+            "id": item_id, "sheet_id": actual_id, "seq": idx + 1,
             "material_code": it.material_code.strip(), "material_name": it.material_name.strip(),
             "uom": (it.uom or "").strip(), "qty": float(it.qty or 0),
-            "supplier_code": (it.supplier_code or "").strip(), "supplier_name": (it.supplier_name or "").strip(),
+            "supplier_code": (it.supplier_code or sup_code).strip(), "supplier_name": (it.supplier_name or sup_name).strip(),
             "batch_fisik": (it.batch_fisik or "").strip(), "supplier_batch": (it.supplier_batch or "").strip(),
             "expired_date": (it.expired_date or "").strip(), "production_date": (it.production_date or "").strip(),
             "pic_id": pic_id, "pic_name": pic_name
         })
 
     # Revisions count
-    rev_count = conn.execute("SELECT count(*) FROM tally_history WHERE sheet_id = ?", (sheet_id,)).fetchone()[0] or 1
+    rev_count = conn.execute("SELECT count(*) FROM tally_history WHERE sheet_id = ?", (actual_id,)).fetchone()[0] or 1
     next_rev = rev_count + 1
 
-    action_name = "finalize" if new_status == "final" else "update"
+    action_name = req.action
+    hist_reason = "Dokumen diperbarui oleh Checker" if new_status == "draft" else "Dokumen diserahkan ke Admin Warehouse"
     hist_id = str(uuid.uuid4())
     conn.execute("""
-        INSERT INTO tally_history (id, sheet_id, action, revision, at, by_name, by_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (hist_id, sheet_id, action_name, next_rev, now, user["name"], user["id"]))
+        INSERT INTO tally_history (id, sheet_id, action, revision, at, by_name, by_id, by_role, from_status, to_status, category, reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?)
+    """, (hist_id, actual_id, action_name, next_rev, now, user["name"], user["id"], user.get("role", "checker"), sheet["status"], new_status, hist_reason))
 
     conn.commit()
     conn.close()
 
     # Sync to Supabase
     sb_sheet = {
-        "id": sheet_id, "doc_no": sheet["doc_no"], "status": new_status,
+        "id": actual_id, "doc_no": sheet["doc_no"], "status": new_status,
+        "delivery_note_no": delivery_note, "po_no": po_num,
+        "supplier_code": sup_code, "supplier_name": sup_name,
+        "arrival_date": arr_date, "driver_name": drv_name, "truck_plate": trk_plate,
+        "current_handler_role": handler_role, "current_handler_name": handler_name,
         "updated_by": user["id"], "updated_by_name": user["name"], "updated_at": now,
-        "finalized_at": now if new_status == "final" else sheet["finalized_at"],
-        "finalized_by": user["id"] if new_status == "final" else sheet["finalized_by"],
-        "finalized_by_name": user["name"] if new_status == "final" else sheet["finalized_by_name"]
+        "finalized_at": now if new_status == "completed" else sheet["finalized_at"],
+        "finalized_by": user["id"] if new_status == "completed" else sheet["finalized_by"],
+        "finalized_by_name": user["name"] if new_status == "completed" else sheet["finalized_by_name"]
     }
-    sync_tally_to_supabase(sb_sheet, sb_items, {"id": hist_id, "sheet_id": sheet_id, "action": action_name, "revision": next_rev, "at": now, "by_name": user["name"], "by_id": user["id"]})
+    sync_tally_to_supabase(sb_sheet, sb_items, {
+        "id": hist_id, "sheet_id": actual_id, "action": action_name, "revision": next_rev, "at": now,
+        "by_name": user["name"], "by_id": user["id"], "by_role": user.get("role", "checker"),
+        "from_status": sheet["status"], "to_status": new_status, "category": "", "reason": hist_reason
+    })
 
-    log_action = "finalize_tally" if new_status == "final" else "update_tally"
-    log_activity(user["id"], user["name"], log_action, "tally_sheet", sheet_id, f"Tally sheet {sheet['doc_no']} ({new_status}) diperbarui")
+    log_activity(user["id"], user["name"], f"update_{new_status}", "tally_sheet", actual_id, f"Tally sheet {sheet['doc_no']} ({new_status}) diperbarui")
 
-    return {"id": sheet_id, "doc_no": sheet["doc_no"], "status": new_status}
+    return {"id": actual_id, "doc_no": sheet["doc_no"], "status": new_status}
+
+@app.post("/api/tally-sheets/{sheet_id}/transition")
+def transition_tally_sheet(sheet_id: str, req: WorkflowTransitionInput, user: dict = Depends(get_current_user)):
+    conn = get_db()
+    sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
+    if not sheet:
+        sync_from_supabase_if_needed(conn, sheet_id=sheet_id)
+        sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
+    if not sheet:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Tally sheet tidak ditemukan.")
+
+    if sheet["status"] == "cancelled":
+        conn.close()
+        raise HTTPException(status_code=400, detail="Dokumen yang dibatalkan tidak dapat diproses lebih lanjut.")
+    if sheet["status"] == "completed":
+        conn.close()
+        raise HTTPException(status_code=400, detail="Dokumen sudah selesai (GR Posted) dan terkunci.")
+
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    old_status = sheet["status"]
+    actual_id = sheet["id"]
+    action = req.action.strip()
+
+    new_status = old_status
+    new_handler_role = sheet["current_handler_role"] or "admin"
+    new_handler_name = ""
+    pending_cat = ""
+    pending_rsn = ""
+    qc_stat = sheet["qc_status"] or ""
+    qc_nts = sheet["qc_notes"] or ""
+    qc_by = sheet["qc_by_name"] or ""
+    qc_at = sheet["qc_at"] or None
+    gr_num = sheet["gr_no"] or ""
+    gr_by = sheet["gr_by_name"] or ""
+    gr_at = sheet["gr_at"] or None
+    gr_nts = sheet["gr_notes"] or ""
+    finalized_at = sheet["finalized_at"]
+    finalized_by = sheet["finalized_by"]
+    finalized_by_name = sheet["finalized_by_name"]
+
+    log_detail = ""
+
+    if action == "submit_to_admin":
+        new_status = "waiting_admin_1"
+        new_handler_role = "admin"
+        log_detail = f"Dokumen diserahkan ke Admin Warehouse oleh {user['name']}"
+
+    elif action == "admin_hold":
+        if not req.reason.strip():
+            raise HTTPException(status_code=400, detail="Alasan penahanan dokumen (Hold Reason) wajib diisi.")
+        new_status = "admin_hold"
+        new_handler_role = "admin"
+        pending_cat = req.category.strip() or "Administrasi / PO"
+        pending_rsn = req.reason.strip()
+        log_detail = f"Admin menahan dokumen: [{pending_cat}] {pending_rsn}"
+
+    elif action == "send_to_qc":
+        new_status = "waiting_qc"
+        new_handler_role = "qc"
+        log_detail = f"Admin Warehouse meneruskan dokumen ke QC untuk sampling/inspeksi"
+
+    elif action == "qc_hold":
+        if not req.reason.strip():
+            raise HTTPException(status_code=400, detail="Alasan penahanan QC (COA/Lab/Issue) wajib diisi.")
+        new_status = "qc_hold"
+        new_handler_role = "qc"
+        pending_cat = req.category.strip() or "QC Issue / COA"
+        pending_rsn = req.reason.strip()
+        log_detail = f"QC menahan dokumen: [{pending_cat}] {pending_rsn}"
+
+    elif action == "qc_approve":
+        new_status = "waiting_gr"
+        new_handler_role = "admin"
+        qc_stat = "passed"
+        qc_nts = req.qc_notes.strip() or req.reason.strip() or "Lolos uji kualitas (QC Approved)"
+        qc_by = user["name"]
+        qc_at = now
+        log_detail = f"QC menyetujui material (Lolos QC): {qc_nts}"
+
+    elif action == "qc_reject":
+        if not req.reason.strip():
+            raise HTTPException(status_code=400, detail="Alasan penolakan QC wajib diisi.")
+        new_status = "qc_rejected"
+        new_handler_role = "admin"
+        qc_stat = "rejected"
+        qc_nts = req.reason.strip()
+        qc_by = user["name"]
+        qc_at = now
+        pending_cat = req.category.strip() or "QC Reject"
+        pending_rsn = req.reason.strip()
+        log_detail = f"QC menolak material (Reject): {pending_rsn}"
+
+    elif action == "admin_gr_hold":
+        if not req.reason.strip():
+            raise HTTPException(status_code=400, detail="Alasan penundaan GR wajib diisi.")
+        new_status = "gr_hold"
+        new_handler_role = "admin"
+        pending_cat = req.category.strip() or "Kendala Posting GR"
+        pending_rsn = req.reason.strip()
+        log_detail = f"Admin menunda GR: [{pending_cat}] {pending_rsn}"
+
+    elif action == "post_gr":
+        if not req.gr_no.strip():
+            raise HTTPException(status_code=400, detail="Nomor Material Document GR SAP wajib diisi.")
+        new_status = "completed"
+        new_handler_role = "closed"
+        gr_num = req.gr_no.strip()
+        gr_by = user["name"]
+        gr_at = now
+        gr_nts = req.reason.strip()
+        finalized_at = now
+        finalized_by = user["id"]
+        finalized_by_name = user["name"]
+        log_detail = f"Admin memposting Goods Receipt SAP No. {gr_num}"
+
+    elif action == "return_to_checker":
+        if not req.reason.strip():
+            raise HTTPException(status_code=400, detail="Alasan pengembalian ke Checker wajib diisi.")
+        new_status = "draft"
+        new_handler_role = "checker"
+        pending_cat = req.category.strip() or "Revisi Fisik / Kuantiti"
+        pending_rsn = req.reason.strip()
+        log_detail = f"Admin mengembalikan dokumen ke Checker untuk revisi: {pending_rsn}"
+
+    else:
+        raise HTTPException(status_code=400, detail=f"Aksi transisi '{action}' tidak dikenal.")
+
+    conn.execute("""
+        UPDATE tally_sheets
+        SET status = ?, current_handler_role = ?, current_handler_name = ?,
+            pending_category = ?, pending_reason = ?,
+            qc_status = ?, qc_notes = ?, qc_by_name = ?, qc_at = ?,
+            gr_no = ?, gr_by_name = ?, gr_at = ?, gr_notes = ?,
+            finalized_at = ?, finalized_by = ?, finalized_by_name = ?,
+            updated_at = ?, updated_by = ?, updated_by_name = ?
+        WHERE id = ?
+    """, (
+        new_status, new_handler_role, new_handler_name,
+        pending_cat, pending_rsn,
+        qc_stat, qc_nts, qc_by, qc_at,
+        gr_num, gr_by, gr_at, gr_nts,
+        finalized_at, finalized_by, finalized_by_name,
+        now, user["id"], user["name"],
+        actual_id
+    ))
+
+    rev_count = conn.execute("SELECT count(*) FROM tally_history WHERE sheet_id = ?", (actual_id,)).fetchone()[0] or 1
+    hist_id = str(uuid.uuid4())
+    conn.execute("""
+        INSERT INTO tally_history 
+        (id, sheet_id, action, revision, at, by_name, by_id, by_role, from_status, to_status, category, reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        hist_id, actual_id, action, rev_count + 1, now, user["name"], user["id"], user.get("role", "admin"),
+        old_status, new_status, req.category.strip(), req.reason.strip() or log_detail
+    ))
+
+    conn.commit()
+    conn.close()
+
+    # Sync to Supabase
+    sync_tally_to_supabase({
+        "id": actual_id, "doc_no": sheet["doc_no"], "status": new_status,
+        "current_handler_role": new_handler_role, "current_handler_name": new_handler_name,
+        "pending_category": pending_cat, "pending_reason": pending_rsn,
+        "qc_status": qc_stat, "qc_notes": qc_nts, "qc_by_name": qc_by, "qc_at": qc_at,
+        "gr_no": gr_num, "gr_by_name": gr_by, "gr_at": gr_at, "gr_notes": gr_nts,
+        "finalized_at": finalized_at, "finalized_by": finalized_by, "finalized_by_name": finalized_by_name,
+        "updated_at": now, "updated_by": user["id"], "updated_by_name": user["name"]
+    }, None, {
+        "id": hist_id, "sheet_id": actual_id, "action": action, "revision": rev_count + 1,
+        "at": now, "by_name": user["name"], "by_id": user["id"], "by_role": user.get("role", "admin"),
+        "from_status": old_status, "to_status": new_status, "category": req.category.strip(), "reason": req.reason.strip() or log_detail
+    })
+
+    log_activity(user["id"], user["name"], f"transition_{action}", "tally_sheet", actual_id, log_detail)
+
+    return {
+        "message": f"Dokumen berhasil diperbarui ke status '{new_status}'",
+        "status": new_status,
+        "current_handler_role": new_handler_role
+    }
 
 class CancelRequest(BaseModel):
     reason: str
@@ -1545,10 +1897,10 @@ class CancelRequest(BaseModel):
 @app.post("/api/tally-sheets/{sheet_id}/cancel")
 def cancel_tally_sheet(sheet_id: str, req: CancelRequest, user: dict = Depends(get_current_user)):
     conn = get_db()
-    sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ?", (sheet_id,)).fetchone()
+    sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
     if not sheet:
         sync_from_supabase_if_needed(conn, sheet_id=sheet_id)
-        sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ?", (sheet_id,)).fetchone()
+        sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
     if not sheet:
         conn.close()
         raise HTTPException(status_code=404, detail="Tally sheet tidak ditemukan.")
@@ -1560,30 +1912,37 @@ def cancel_tally_sheet(sheet_id: str, req: CancelRequest, user: dict = Depends(g
         raise HTTPException(status_code=403, detail="Hanya Admin atau pembuat draft yang dapat membatalkan dokumen.")
 
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    actual_id = sheet["id"]
     conn.execute("""
         UPDATE tally_sheets 
-        SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ?, cancel_reason = ?
+        SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ?, cancel_reason = ?,
+            current_handler_role = 'closed'
         WHERE id = ?
-    """, (now, user["id"], user["name"], req.reason.strip(), sheet_id))
+    """, (now, user["id"], user["name"], req.reason.strip(), actual_id))
 
-    rev_count = conn.execute("SELECT count(*) FROM tally_history WHERE sheet_id = ?", (sheet_id,)).fetchone()[0] or 1
+    rev_count = conn.execute("SELECT count(*) FROM tally_history WHERE sheet_id = ?", (actual_id,)).fetchone()[0] or 1
     hist_id = str(uuid.uuid4())
     conn.execute("""
-        INSERT INTO tally_history (id, sheet_id, action, revision, at, by_name, by_id)
-        VALUES (?, ?, 'cancel', ?, ?, ?, ?)
-    """, (hist_id, sheet_id, rev_count + 1, now, user["name"], user["id"]))
+        INSERT INTO tally_history (id, sheet_id, action, revision, at, by_name, by_id, by_role, from_status, to_status, category, reason)
+        VALUES (?, ?, 'cancel', ?, ?, ?, ?, ?, ?, 'cancelled', 'Pembatalan Dokumen', ?)
+    """, (hist_id, actual_id, rev_count + 1, now, user["name"], user["id"], user.get("role", "admin"), sheet["status"], req.reason.strip()))
 
     conn.commit()
     conn.close()
 
     # Sync cancel to Supabase
     sync_tally_to_supabase({
-        "id": sheet_id, "doc_no": sheet["doc_no"], "status": "cancelled",
+        "id": actual_id, "doc_no": sheet["doc_no"], "status": "cancelled",
         "cancelled_at": now, "cancelled_by": user["id"], "cancelled_by_name": user["name"],
-        "cancel_reason": req.reason.strip(), "updated_at": now, "updated_by": user["id"], "updated_by_name": user["name"]
-    }, None, {"id": hist_id, "sheet_id": sheet_id, "action": "cancel", "revision": rev_count + 1, "at": now, "by_name": user["name"], "by_id": user["id"]})
+        "cancel_reason": req.reason.strip(), "updated_at": now, "updated_by": user["id"], "updated_by_name": user["name"],
+        "current_handler_role": "closed"
+    }, None, {
+        "id": hist_id, "sheet_id": actual_id, "action": "cancel", "revision": rev_count + 1,
+        "at": now, "by_name": user["name"], "by_id": user["id"], "by_role": user.get("role", "admin"),
+        "from_status": sheet["status"], "to_status": "cancelled", "category": "Pembatalan Dokumen", "reason": req.reason.strip()
+    })
 
-    log_activity(user["id"], user["name"], "cancel_tally", "tally_sheet", sheet_id, f"Tally sheet {sheet['doc_no']} dibatalkan: {req.reason.strip()}")
+    log_activity(user["id"], user["name"], "cancel_tally", "tally_sheet", actual_id, f"Tally sheet {sheet['doc_no']} dibatalkan: {req.reason.strip()}")
     return {"message": "Tally sheet berhasil dibatalkan"}
 
 @app.get("/api/tally-sheets/{sheet_id}/history")
@@ -1600,7 +1959,12 @@ def get_tally_history(sheet_id: str):
         "revision": r["revision"],
         "at": r["at"],
         "by_name": r["by_name"],
-        "by_id": r["by_id"]
+        "by_id": r["by_id"],
+        "by_role": r["by_role"] if "by_role" in r.keys() else "user",
+        "from_status": r["from_status"] if "from_status" in r.keys() else "",
+        "to_status": r["to_status"] if "to_status" in r.keys() else "",
+        "category": r["category"] if "category" in r.keys() else "",
+        "reason": r["reason"] if "reason" in r.keys() else ""
     } for r in rows]
 
 # ----------------- EXCEL EXPORT -----------------

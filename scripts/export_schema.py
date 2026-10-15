@@ -99,11 +99,56 @@ CREATE TABLE IF NOT EXISTS public.tally_sheets (
     cancelled_at TIMESTAMPTZ,
     cancelled_by TEXT,
     cancelled_by_name TEXT,
-    cancel_reason TEXT
+    cancel_reason TEXT,
+    delivery_note_no TEXT DEFAULT '',
+    po_no TEXT DEFAULT '',
+    supplier_code TEXT DEFAULT '',
+    supplier_name TEXT DEFAULT '',
+    arrival_date TEXT DEFAULT '',
+    driver_name TEXT DEFAULT '',
+    truck_plate TEXT DEFAULT '',
+    current_handler_role TEXT DEFAULT 'checker',
+    current_handler_name TEXT DEFAULT '',
+    pending_reason TEXT DEFAULT '',
+    pending_category TEXT DEFAULT '',
+    qc_status TEXT DEFAULT '',
+    qc_notes TEXT DEFAULT '',
+    qc_by_name TEXT DEFAULT '',
+    qc_by_id TEXT DEFAULT '',
+    qc_at TIMESTAMPTZ,
+    gr_no TEXT DEFAULT '',
+    gr_by_name TEXT DEFAULT '',
+    gr_by_id TEXT DEFAULT '',
+    gr_at TIMESTAMPTZ,
+    gr_notes TEXT DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_tally_sheets_doc_no ON public.tally_sheets(doc_no);
 CREATE INDEX IF NOT EXISTS idx_tally_sheets_status ON public.tally_sheets(status);
 CREATE INDEX IF NOT EXISTS idx_tally_sheets_created_at ON public.tally_sheets(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tally_sheets_po_no ON public.tally_sheets(po_no);
+CREATE INDEX IF NOT EXISTS idx_tally_sheets_delivery_note ON public.tally_sheets(delivery_note_no);
+
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS delivery_note_no TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS po_no TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS supplier_code TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS supplier_name TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS arrival_date TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS driver_name TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS truck_plate TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS current_handler_role TEXT DEFAULT 'checker';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS current_handler_name TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS pending_reason TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS pending_category TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS qc_status TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS qc_notes TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS qc_by_name TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS qc_by_id TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS qc_at TIMESTAMPTZ;
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS gr_no TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS gr_by_name TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS gr_by_id TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS gr_at TIMESTAMPTZ;
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS gr_notes TEXT DEFAULT '';
 ''')
 
 # 6. TALLY_ITEMS
@@ -114,6 +159,10 @@ CREATE TABLE IF NOT EXISTS public.tally_items (
     seq INTEGER NOT NULL,
     material_code TEXT NOT NULL,
     material_name TEXT NOT NULL,
+    uom TEXT DEFAULT '',
+    qty NUMERIC DEFAULT 0,
+    supplier_code TEXT DEFAULT '',
+    supplier_name TEXT DEFAULT '',
     batch_fisik TEXT DEFAULT '',
     supplier_batch TEXT DEFAULT '',
     expired_date TEXT DEFAULT '',
@@ -123,10 +172,31 @@ CREATE TABLE IF NOT EXISTS public.tally_items (
 );
 CREATE INDEX IF NOT EXISTS idx_tally_items_sheet_id ON public.tally_items(sheet_id);
 CREATE INDEX IF NOT EXISTS idx_tally_items_batch_fisik ON public.tally_items(batch_fisik);
+
+ALTER TABLE public.tally_items ADD COLUMN IF NOT EXISTS uom TEXT DEFAULT '';
+ALTER TABLE public.tally_items ADD COLUMN IF NOT EXISTS qty NUMERIC DEFAULT 0;
+ALTER TABLE public.tally_items ADD COLUMN IF NOT EXISTS supplier_code TEXT DEFAULT '';
+ALTER TABLE public.tally_items ADD COLUMN IF NOT EXISTS supplier_name TEXT DEFAULT '';
 ''')
 
-# 7. TALLY_HISTORY
-out.append('''-- 7. TALLY HISTORY TABLE
+# 7. SUPPLIERS
+out.append('''-- 7. SUPPLIERS TABLE
+CREATE TABLE IF NOT EXISTS public.suppliers (
+    id TEXT PRIMARY KEY,
+    code TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    city TEXT DEFAULT '',
+    country TEXT DEFAULT '',
+    postal_code TEXT DEFAULT '',
+    purch_org TEXT DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
+);
+CREATE INDEX IF NOT EXISTS idx_suppliers_code ON public.suppliers(code);
+CREATE INDEX IF NOT EXISTS idx_suppliers_name ON public.suppliers(name);
+''')
+
+# 8. TALLY_HISTORY
+out.append('''-- 8. TALLY HISTORY TABLE
 CREATE TABLE IF NOT EXISTS public.tally_history (
     id TEXT PRIMARY KEY,
     sheet_id TEXT NOT NULL REFERENCES public.tally_sheets(id) ON DELETE CASCADE,
@@ -134,9 +204,20 @@ CREATE TABLE IF NOT EXISTS public.tally_history (
     revision INTEGER NOT NULL,
     at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
     by_name TEXT NOT NULL,
-    by_id TEXT NOT NULL
+    by_id TEXT NOT NULL,
+    by_role TEXT DEFAULT '',
+    from_status TEXT DEFAULT '',
+    to_status TEXT DEFAULT '',
+    category TEXT DEFAULT '',
+    reason TEXT DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_tally_history_sheet_id ON public.tally_history(sheet_id);
+
+ALTER TABLE public.tally_history ADD COLUMN IF NOT EXISTS by_role TEXT DEFAULT '';
+ALTER TABLE public.tally_history ADD COLUMN IF NOT EXISTS from_status TEXT DEFAULT '';
+ALTER TABLE public.tally_history ADD COLUMN IF NOT EXISTS to_status TEXT DEFAULT '';
+ALTER TABLE public.tally_history ADD COLUMN IF NOT EXISTS category TEXT DEFAULT '';
+ALTER TABLE public.tally_history ADD COLUMN IF NOT EXISTS reason TEXT DEFAULT '';
 ''')
 
 # 8. ACTIVITY_LOGS

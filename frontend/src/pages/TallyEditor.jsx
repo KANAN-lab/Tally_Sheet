@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Plus, Save } from "lucide-react";
+import { AlertCircle, AlertTriangle, Building2, CalendarDays, CheckCircle2, FileText, Plus, Save, Send, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,6 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import PageHeader from "@/components/PageHeader";
 import TallyRow, { GRID } from "@/components/TallyRow";
+import SupplierSearch from "@/components/SupplierSearch";
 import { useAuth } from "@/context/AuthContext";
 import { api, errMsg } from "@/lib/api";
 import { canEdit } from "@/lib/format";
@@ -28,14 +31,14 @@ const LABELS = {
 };
 
 let keySeq = 0;
-const blank = (currentUser) => ({
+const blank = (currentUser, defaultSupplier = null) => ({
   key: ++keySeq,
   material_code: "",
   material_name: "",
   uom: "",
   qty: "",
-  supplier_code: "",
-  supplier_name: "",
+  supplier_code: defaultSupplier?.code || "",
+  supplier_name: defaultSupplier?.name || "",
   batch_fisik: "",
   supplier_batch: "",
   expired_date: "",
@@ -65,13 +68,13 @@ function clientValidate(rows, action, settings) {
     if (r.expired_date && r.production_date && r.production_date > r.expired_date) {
       errs[`${i}-production_date`] = "Production Date tidak boleh lebih besar dari Expired Date";
     }
-    if (action === "final") {
+    if (action === "final" || action === "submit_to_admin") {
       const vals = {
         batch_fisik: (r.batch_fisik || "").trim(),
         supplier_batch: (r.supplier_batch || "").trim(),
         expired_date: r.expired_date,
         production_date: r.production_date,
-        pic: r.pic_id || "ok" // PIC is auto-filled by current user
+        pic: r.pic_id || "ok"
       };
       Object.entries(vals).forEach(([f, v]) => {
         if (settings.required?.[f] && !v) {
@@ -104,7 +107,18 @@ export default function TallyEditor() {
   const [errors, setErrors] = useState({});
   const [general, setGeneral] = useState("");
   const [busy, setBusy] = useState(false);
-  const [confirmFinal, setConfirmFinal] = useState(false);
+  const [confirmSubmit, setConfirmSubmit] = useState(false);
+
+  // Header State
+  const [header, setHeader] = useState({
+    delivery_note_no: "",
+    po_no: "",
+    supplier_code: "",
+    supplier_name: "",
+    arrival_date: new Date().toISOString().slice(0, 10),
+    driver_name: "",
+    truck_plate: ""
+  });
 
   useEffect(() => {
     api.get("/settings").then((r) => setSettings(r.data));
@@ -118,6 +132,15 @@ export default function TallyEditor() {
             return;
           }
           setSheet(r.data);
+          setHeader({
+            delivery_note_no: r.data.delivery_note_no || "",
+            po_no: r.data.po_no || "",
+            supplier_code: r.data.supplier_code || "",
+            supplier_name: r.data.supplier_name || "",
+            arrival_date: r.data.arrival_date || new Date().toISOString().slice(0, 10),
+            driver_name: r.data.driver_name || "",
+            truck_plate: r.data.truck_plate || ""
+          });
           setRows(
             r.data.items.map((it) => ({
               ...blank(user),
@@ -136,6 +159,22 @@ export default function TallyEditor() {
       setRows([blank(user)]);
     }
   }, [id, user, navigate]);
+
+  const updateHeader = (k, v) => {
+    setHeader((prev) => ({ ...prev, [k]: v }));
+  };
+
+  const handleHeaderSupplierSelect = (sup) => {
+    if (sup) {
+      setHeader((prev) => ({ ...prev, supplier_code: sup.code, supplier_name: sup.name }));
+      // Optional: prefill rows with empty supplier
+      setRows((rs) =>
+        rs.map((r) => (!r.supplier_code ? { ...r, supplier_code: sup.code, supplier_name: sup.name } : r))
+      );
+    } else {
+      setHeader((prev) => ({ ...prev, supplier_code: "", supplier_name: "" }));
+    }
+  };
 
   const update = (i, patch) => {
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
@@ -156,8 +195,8 @@ export default function TallyEditor() {
       material_name: target.material_name,
       uom: target.uom || "",
       qty: target.qty ?? "",
-      supplier_code: target.supplier_code || "",
-      supplier_name: target.supplier_name || "",
+      supplier_code: target.supplier_code || header.supplier_code || "",
+      supplier_name: target.supplier_name || header.supplier_name || "",
       batch_fisik: "",
       supplier_batch: "",
       expired_date: target.expired_date || "",
@@ -178,30 +217,45 @@ export default function TallyEditor() {
   };
 
   const save = async (action) => {
-    setConfirmFinal(false);
     setGeneral("");
+
+    // Validate header if submitting to admin
+    if (action === "submit_to_admin") {
+      if (!header.delivery_note_no.trim()) {
+        return toast.error("Nomor Surat Jalan wajib diisi sebelum mengirim ke Admin");
+      }
+      if (!header.po_no.trim()) {
+        return toast.error("Nomor PO SAP wajib diisi sebelum mengirim ke Admin");
+      }
+    }
+
     const filled = rows.filter((r) => !isEmpty(r));
     if (!filled.length) {
-      setGeneral("Minimal 1 baris material harus diisi");
       return toast.error("Minimal 1 baris material harus diisi");
     }
-    if (filled.length !== rows.length) setRows(filled);
 
     const errs = clientValidate(filled, action, settings);
     setErrors(errs);
     if (Object.keys(errs).length) {
-      return toast.error("Data belum valid. Periksa kolom yang ditandai merah.");
+      return toast.error("Data material belum valid. Periksa kolom yang ditandai merah.");
     }
 
     const payload = {
+      delivery_note_no: header.delivery_note_no.trim(),
+      po_no: header.po_no.trim(),
+      supplier_code: header.supplier_code.trim(),
+      supplier_name: header.supplier_name.trim(),
+      arrival_date: header.arrival_date || new Date().toISOString().slice(0, 10),
+      driver_name: header.driver_name.trim(),
+      truck_plate: header.truck_plate.trim(),
       action,
       items: filled.map((r) => ({
         material_code: r.material_code,
         material_name: r.material_name,
         uom: r.uom || "",
         qty: r.qty === "" || r.qty === null || r.qty === undefined ? 0 : parseFloat(r.qty) || 0,
-        supplier_code: r.supplier_code || "",
-        supplier_name: r.supplier_name || "",
+        supplier_code: r.supplier_code || header.supplier_code || "",
+        supplier_name: r.supplier_name || header.supplier_name || "",
         batch_fisik: r.batch_fisik || "",
         supplier_batch: r.supplier_batch || "",
         expired_date: r.expired_date || "",
@@ -216,10 +270,11 @@ export default function TallyEditor() {
       const r = id
         ? await api.put(`/tally-sheets/${id}`, payload)
         : await api.post("/tally-sheets", payload);
+
       toast.success(
-        action === "final"
-          ? `Tally sheet ${r.data.doc_no} berhasil difinalisasi`
-          : `Tally sheet ${r.data.doc_no} disimpan sebagai Draft`
+        action === "submit_to_admin"
+          ? `Tally sheet ${r.data.doc_no} berhasil diserahkan ke Admin Warehouse`
+          : `Tally sheet ${r.data.doc_no} berhasil disimpan sebagai Draft`
       );
       navigate(`/tally/${r.data.id}`);
     } catch (e) {
@@ -245,56 +300,150 @@ export default function TallyEditor() {
   const completeRows = rows.filter((r) => r.material_code).length;
 
   return (
-    <div data-testid="tally-editor-page">
+    <div data-testid="tally-editor-page" className="space-y-5">
       <PageHeader
         title={sheet ? `Edit ${sheet.doc_no}` : "Buat Tally Sheet Baru"}
-        subtitle={
-          sheet
-            ? "Dokumen Draft — dapat diubah sebelum difinalisasi."
-            : "Nomor dokumen dibuat otomatis saat disimpan. Kolom bertanda * wajib saat finalisasi."
-        }
+        subtitle="Langkah 1: Lengkapi data Surat Jalan & PO. Langkah 2: Isi rincian material kedatangan fisik."
         actions={
-          <>
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
-              onClick={() => navigate(sheet ? `/tally/${sheet.id}` : "/tally")}
-              data-testid="tally-editor-back-button"
-            >
-              Kembali
-            </Button>
-            <Button
               onClick={() => save("draft")}
               disabled={busy}
-              className="bg-amber-500 hover:bg-amber-600 text-white"
-              data-testid="tally-editor-save-draft-button"
+              data-testid="tally-editor-save-draft"
             >
-              <Save className="mr-1 h-4 w-4" /> Simpan Draft
+              <Save className="mr-1.5 h-4 w-4" /> Simpan Draft
             </Button>
             <Button
-              onClick={() => setConfirmFinal(true)}
+              onClick={() => setConfirmSubmit(true)}
               disabled={busy}
-              className="bg-[#0B2149] hover:bg-[#13306a]"
-              data-testid="tally-editor-finalize-button"
+              className="bg-blue-700 hover:bg-blue-800 font-semibold"
+              data-testid="tally-editor-submit-button"
             >
-              <CheckCircle2 className="mr-1 h-4 w-4" /> Finalisasi
+              <Send className="mr-1.5 h-4 w-4" /> Kirim ke Admin Warehouse
             </Button>
-          </>
+          </div>
         }
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
+      {/* Alert if Returning from Admin */}
+      {sheet?.pending_reason && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900 shadow-sm" data-testid="tally-editor-revision-alert">
+          <div className="flex items-center gap-2 font-bold text-amber-950">
+            <AlertTriangle className="h-5 w-5 text-amber-600" />
+            Catatan Revisi dari Admin Warehouse:
+          </div>
+          <div className="mt-1 text-sm">
+            <span className="font-semibold">[{sheet.pending_category || "Catatan"}]</span> {sheet.pending_reason}
+          </div>
+        </div>
+      )}
+
+      {/* 1. HEADER FORM KEDATANGAN */}
+      <div className="rounded-xl border border-blue-100 bg-white p-5 shadow-sm space-y-4" data-testid="tally-header-form">
+        <div className="flex items-center gap-2 font-display text-base font-bold text-[#0B2149] border-b pb-2">
+          <FileText className="h-5 w-5 text-blue-700" />
+          Informasi Header Surat Jalan & PO Kedatangan
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <Label className="text-xs font-semibold text-slate-700">Tanggal Kedatangan (Today)</Label>
+            <div className="relative mt-1">
+              <CalendarDays className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                type="date"
+                value={header.arrival_date}
+                onChange={(e) => updateHeader("arrival_date", e.target.value)}
+                className="pl-9 bg-slate-50 font-medium text-xs"
+                data-testid="header-arrival-date"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-xs font-semibold text-slate-700">
+              Nomor Surat Jalan (SJ) <span className="text-rose-600">*</span>
+            </Label>
+            <Input
+              placeholder="Contoh: SJ-2026/10/001"
+              value={header.delivery_note_no}
+              onChange={(e) => updateHeader("delivery_note_no", e.target.value)}
+              className="mt-1 font-mono text-xs font-semibold"
+              data-testid="header-delivery-note"
+            />
+          </div>
+
+          <div>
+            <Label className="text-xs font-semibold text-slate-700">
+              Nomor PO SAP <span className="text-rose-600">*</span>
+            </Label>
+            <Input
+              placeholder="Contoh: 4500123456"
+              value={header.po_no}
+              onChange={(e) => updateHeader("po_no", e.target.value)}
+              className="mt-1 font-mono text-xs font-semibold"
+              data-testid="header-po-no"
+            />
+          </div>
+
+          <div>
+            <Label className="text-xs font-semibold text-slate-700">Supplier Vendor (MKVZ)</Label>
+            <div className="mt-1">
+              <SupplierSearch
+                value={header.supplier_code}
+                supplierName={header.supplier_name}
+                onSelect={handleHeaderSupplierSelect}
+                testId="header-supplier-search"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-xs font-semibold text-slate-700">No. Polisi Armada Truk</Label>
+            <Input
+              placeholder="Contoh: B 9123 KAN"
+              value={header.truck_plate}
+              onChange={(e) => updateHeader("truck_plate", e.target.value)}
+              className="mt-1 text-xs"
+              data-testid="header-truck-plate"
+            />
+          </div>
+
+          <div>
+            <Label className="text-xs font-semibold text-slate-700">Nama Supir / Ekspedisi</Label>
+            <Input
+              placeholder="Nama supir atau ekspedisi pengirim"
+              value={header.driver_name}
+              onChange={(e) => updateHeader("driver_name", e.target.value)}
+              className="mt-1 text-xs"
+              data-testid="header-driver-name"
+            />
+          </div>
+
+          <div className="sm:col-span-2 flex items-center gap-3 rounded-lg bg-blue-50/70 p-3 text-xs text-blue-900 border border-blue-200">
+            <Truck className="h-5 w-5 text-blue-700 shrink-0" />
+            <div>
+              <span className="font-semibold">Petunjuk Checker:</span> Pastikan Nomor Surat Jalan dan Nomor PO sesuai dengan dokumen fisik vendor sebelum mengirim ke Admin.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Row Stats & Alerts */}
+      <div className="flex flex-wrap items-center gap-3 text-sm">
         <span className="rounded-md bg-white border px-3 py-1.5 text-slate-700 font-medium" data-testid="tally-editor-row-count">
           {rows.length} baris · {completeRows} material dipilih
         </span>
         <span className="rounded-md bg-blue-50 border border-blue-200 px-3 py-1.5 text-blue-900 text-xs">
-          PIC Aktif: <strong>{user?.name}</strong> (Terkunci Otomatis)
+          Checker Aktif: <strong>{user?.name}</strong> (Terkunci Otomatis)
         </span>
         {errorCount > 0 && (
           <span
             className="flex items-center gap-1.5 rounded-md bg-rose-50 border border-rose-200 px-3 py-1.5 text-rose-700 font-medium"
             data-testid="tally-editor-error-count"
           >
-            <AlertTriangle className="h-4 w-4" /> {errorCount} kesalahan perlu diperbaiki
+            <AlertTriangle className="h-4 w-4" /> {errorCount} kolom material perlu diperbaiki
           </span>
         )}
         {general && (
@@ -307,6 +456,7 @@ export default function TallyEditor() {
         )}
       </div>
 
+      {/* 2. MATERIAL GRID */}
       <div className="rounded-xl border bg-white shadow-sm">
         <div className="overflow-x-auto">
           <div className="min-w-[1240px] p-3 lg:p-0 space-y-3 lg:space-y-0">
@@ -345,11 +495,11 @@ export default function TallyEditor() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-t p-3">
           <Button
             variant="outline"
-            onClick={() => setRows((rs) => [...rs, blank(user)])}
+            onClick={() => setRows((rs) => [...rs, blank(user, { code: header.supplier_code, name: header.supplier_name })])}
             className="border-dashed border-blue-300 text-blue-700 hover:bg-blue-50 hover:text-blue-800"
             data-testid="tally-editor-add-row-button"
           >
-            <Plus className="mr-1 h-4 w-4" /> Tambah Baris
+            <Plus className="mr-1 h-4 w-4" /> Tambah Baris Material
           </Button>
           <p className="text-xs text-slate-500">
             Gunakan tombol <span className="font-semibold text-slate-700">Duplikat</span> pada baris jika barang sama namun beda batch/tanggal.
@@ -357,22 +507,31 @@ export default function TallyEditor() {
         </div>
       </div>
 
-      <AlertDialog open={confirmFinal} onOpenChange={setConfirmFinal}>
-        <AlertDialogContent data-testid="tally-editor-finalize-dialog">
+      {/* DIALOG CONFIRM SUBMIT TO ADMIN */}
+      <AlertDialog open={confirmSubmit} onOpenChange={setConfirmSubmit}>
+        <AlertDialogContent data-testid="tally-editor-submit-dialog">
           <AlertDialogHeader>
-            <AlertDialogTitle>Finalisasi tally sheet?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Dokumen Final tidak dapat diedit lagi. Pastikan seluruh data, batch, dan tanggal sudah benar.
+            <AlertDialogTitle className="text-[#0B2149]">Kirim dokumen ke Admin Warehouse?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>
+                Dokumen Surat Jalan <strong>{header.delivery_note_no || "-"}</strong> (PO: <strong>{header.po_no || "-"}</strong>) akan diserahkan ke Admin Warehouse untuk verifikasi kesesuaian dokumen & PO SAP sebelum diajukan ke QC.
+              </p>
+              <p className="text-xs text-slate-600">
+                Pastikan seluruh kuantiti dan nomor batch fisik telah selesai dihitung.
+              </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid="tally-editor-finalize-cancel">Periksa Lagi</AlertDialogCancel>
+            <AlertDialogCancel data-testid="tally-editor-submit-cancel">Periksa Lagi</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => save("final")}
-              className="bg-[#0B2149] hover:bg-[#13306a]"
-              data-testid="tally-editor-finalize-confirm"
+              onClick={() => {
+                setConfirmSubmit(false);
+                save("submit_to_admin");
+              }}
+              className="bg-blue-700 hover:bg-blue-800"
+              data-testid="tally-editor-submit-confirm"
             >
-              Ya, Finalisasi
+              Kirim ke Admin WH
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

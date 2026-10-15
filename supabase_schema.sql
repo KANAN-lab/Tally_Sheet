@@ -77,11 +77,57 @@ CREATE TABLE IF NOT EXISTS public.tally_sheets (
     cancelled_at TIMESTAMPTZ,
     cancelled_by TEXT,
     cancelled_by_name TEXT,
-    cancel_reason TEXT
+    cancel_reason TEXT,
+    delivery_note_no TEXT DEFAULT '',
+    po_no TEXT DEFAULT '',
+    supplier_code TEXT DEFAULT '',
+    supplier_name TEXT DEFAULT '',
+    arrival_date TEXT DEFAULT '',
+    driver_name TEXT DEFAULT '',
+    truck_plate TEXT DEFAULT '',
+    current_handler_role TEXT DEFAULT 'checker',
+    current_handler_name TEXT DEFAULT '',
+    pending_reason TEXT DEFAULT '',
+    pending_category TEXT DEFAULT '',
+    qc_status TEXT DEFAULT '',
+    qc_notes TEXT DEFAULT '',
+    qc_by_name TEXT DEFAULT '',
+    qc_by_id TEXT DEFAULT '',
+    qc_at TIMESTAMPTZ,
+    gr_no TEXT DEFAULT '',
+    gr_by_name TEXT DEFAULT '',
+    gr_by_id TEXT DEFAULT '',
+    gr_at TIMESTAMPTZ,
+    gr_notes TEXT DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_tally_sheets_doc_no ON public.tally_sheets(doc_no);
 CREATE INDEX IF NOT EXISTS idx_tally_sheets_status ON public.tally_sheets(status);
 CREATE INDEX IF NOT EXISTS idx_tally_sheets_created_at ON public.tally_sheets(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tally_sheets_po_no ON public.tally_sheets(po_no);
+CREATE INDEX IF NOT EXISTS idx_tally_sheets_delivery_note ON public.tally_sheets(delivery_note_no);
+
+-- Migration support for existing tally_sheets table
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS delivery_note_no TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS po_no TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS supplier_code TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS supplier_name TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS arrival_date TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS driver_name TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS truck_plate TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS current_handler_role TEXT DEFAULT 'checker';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS current_handler_name TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS pending_reason TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS pending_category TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS qc_status TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS qc_notes TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS qc_by_name TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS qc_by_id TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS qc_at TIMESTAMPTZ;
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS gr_no TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS gr_by_name TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS gr_by_id TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS gr_at TIMESTAMPTZ;
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS gr_notes TEXT DEFAULT '';
 
 -- 6. TALLY ITEMS TABLE
 CREATE TABLE IF NOT EXISTS public.tally_items (
@@ -124,7 +170,7 @@ CREATE INDEX IF NOT EXISTS idx_suppliers_code ON public.suppliers(code);
 CREATE INDEX IF NOT EXISTS idx_suppliers_name ON public.suppliers(name);
 CREATE INDEX IF NOT EXISTS idx_tally_items_batch_fisik ON public.tally_items(batch_fisik);
 
--- 7. TALLY HISTORY TABLE
+-- 8. TALLY HISTORY TABLE
 CREATE TABLE IF NOT EXISTS public.tally_history (
     id TEXT PRIMARY KEY,
     sheet_id TEXT NOT NULL REFERENCES public.tally_sheets(id) ON DELETE CASCADE,
@@ -132,9 +178,21 @@ CREATE TABLE IF NOT EXISTS public.tally_history (
     revision INTEGER NOT NULL,
     at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
     by_name TEXT NOT NULL,
-    by_id TEXT NOT NULL
+    by_id TEXT NOT NULL,
+    by_role TEXT DEFAULT '',
+    from_status TEXT DEFAULT '',
+    to_status TEXT DEFAULT '',
+    category TEXT DEFAULT '',
+    reason TEXT DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_tally_history_sheet_id ON public.tally_history(sheet_id);
+
+-- Migration support for existing tally_history table
+ALTER TABLE public.tally_history ADD COLUMN IF NOT EXISTS by_role TEXT DEFAULT '';
+ALTER TABLE public.tally_history ADD COLUMN IF NOT EXISTS from_status TEXT DEFAULT '';
+ALTER TABLE public.tally_history ADD COLUMN IF NOT EXISTS to_status TEXT DEFAULT '';
+ALTER TABLE public.tally_history ADD COLUMN IF NOT EXISTS category TEXT DEFAULT '';
+ALTER TABLE public.tally_history ADD COLUMN IF NOT EXISTS reason TEXT DEFAULT '';
 
 -- 8. ACTIVITY LOGS TABLE
 CREATE TABLE IF NOT EXISTS public.activity_logs (
@@ -197,6 +255,15 @@ ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, pas
 INSERT INTO public.users (id, email, name, password_hash, role, is_pic, active, created_at)
 VALUES ('9707715a-10b7-498c-94c8-276ab935f5dd', 'azes@tally.com', 'Azes', '4c1e340fbf3c22ca4dd18336c73d8c66b5e57bba40ab2cc90fd071f442dd611b', 'user', 1, 1, '2026-10-15T04:18:33.504198+00:00')
 ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, password_hash = EXCLUDED.password_hash;
+INSERT INTO public.users (id, email, name, password_hash, role, is_pic, active, created_at)
+VALUES ('c1111111-1111-4111-8111-111111111111', 'checker@tally.com', 'Budi Checker', '4c1e340fbf3c22ca4dd18336c73d8c66b5e57bba40ab2cc90fd071f442dd611b', 'checker', 1, 1, '2026-10-15T04:18:33.504198+00:00')
+ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, role = EXCLUDED.role;
+INSERT INTO public.users (id, email, name, password_hash, role, is_pic, active, created_at)
+VALUES ('q2222222-2222-4222-8222-222222222222', 'qc@tally.com', 'Rina QC Inspector', '4c1e340fbf3c22ca4dd18336c73d8c66b5e57bba40ab2cc90fd071f442dd611b', 'qc', 1, 1, '2026-10-15T04:18:33.504198+00:00')
+ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, role = EXCLUDED.role;
+INSERT INTO public.users (id, email, name, password_hash, role, is_pic, active, created_at)
+VALUES ('w3333333-3333-4333-8333-333333333333', 'warehouse@tally.com', 'Hendra Admin WH', '4c1e340fbf3c22ca4dd18336c73d8c66b5e57bba40ab2cc90fd071f442dd611b', 'warehouse_admin', 1, 1, '2026-10-15T04:18:33.504198+00:00')
+ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, role = EXCLUDED.role;
 INSERT INTO public.settings (id, required_json, duplicate_rule, updated_at, updated_by_name)
 VALUES ('global', '{"batch_fisik": true, "supplier_batch": true, "expired_date": true, "production_date": true, "pic": true}', 'within_document', '2026-10-15T04:18:33.504003+00:00', 'Ade Iksan Ramdani')
 ON CONFLICT (id) DO UPDATE SET required_json = EXCLUDED.required_json;
