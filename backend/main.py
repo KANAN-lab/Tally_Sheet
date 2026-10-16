@@ -20,9 +20,17 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 import requests
 
 try:
-    from domain import WorkflowManager, SettingsService, DEFAULT_HOLD_CATEGORIES, DEFAULT_WORKFLOW_STAGES, QADocumentRegistry, BeritaAcaraRecord, DEFAULT_QA_DOCUMENTS
+    from domain import (
+        WorkflowManager, SettingsService, DEFAULT_HOLD_CATEGORIES, DEFAULT_WORKFLOW_STAGES,
+        QADocumentRegistry, BeritaAcaraRecord, DEFAULT_QA_DOCUMENTS,
+        ROLE_METADATA, PERMISSION_DEFINITIONS, DEFAULT_ROLE_PERMISSIONS, PermissionService
+    )
 except ImportError:
-    from backend.domain import WorkflowManager, SettingsService, DEFAULT_HOLD_CATEGORIES, DEFAULT_WORKFLOW_STAGES, QADocumentRegistry, BeritaAcaraRecord, DEFAULT_QA_DOCUMENTS
+    from backend.domain import (
+        WorkflowManager, SettingsService, DEFAULT_HOLD_CATEGORIES, DEFAULT_WORKFLOW_STAGES,
+        QADocumentRegistry, BeritaAcaraRecord, DEFAULT_QA_DOCUMENTS,
+        ROLE_METADATA, PERMISSION_DEFINITIONS, DEFAULT_ROLE_PERMISSIONS, PermissionService
+    )
 
 # Constants
 SECRET_KEY = os.environ.get("SECRET_KEY", "tally_secret_key_production_grade_jwt_token")
@@ -192,6 +200,20 @@ def sync_from_supabase_if_needed(conn, sheet_id: str = None):
                             ))
                 except Exception as e_hist:
                     print("Notice: Supabase pull history warning:", e_hist)
+            if not sheet_id:
+                try:
+                    r_u = requests.get(f"{SUPABASE_URL}/rest/v1/users", headers=get_sb_headers(), timeout=4)
+                    if r_u.status_code == 200 and r_u.json():
+                        for u in r_u.json():
+                            conn.execute("""
+                                INSERT OR REPLACE INTO users (id, email, name, password_hash, role, is_pic, active, created_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                u["id"], u["email"], u["name"], u["password_hash"], u.get("role", "user"),
+                                u.get("is_pic", 1), u.get("active", 1), u.get("created_at")
+                            ))
+                except Exception as e_u:
+                    print("Notice: Supabase pull users warning:", e_u)
 
             conn.commit()
     except Exception as e:
@@ -467,6 +489,8 @@ def init_db():
             c.execute("ALTER TABLE settings ADD COLUMN hold_categories_json TEXT DEFAULT '[]'")
         if "qa_documents_json" not in set_cols:
             c.execute("ALTER TABLE settings ADD COLUMN qa_documents_json TEXT DEFAULT '{}'")
+        if "role_permissions_json" not in set_cols:
+            c.execute("ALTER TABLE settings ADD COLUMN role_permissions_json TEXT DEFAULT '{}'")
     except Exception as e:
         print("Notice: check settings columns:", e)
 
@@ -475,8 +499,8 @@ def init_db():
     if not cur.fetchone():
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         c.execute("""
-            INSERT INTO settings (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, updated_at, updated_by_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO settings (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, role_permissions_json, updated_at, updated_by_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             "global",
             json.dumps({
@@ -489,6 +513,7 @@ def init_db():
             "within_document",
             json.dumps(DEFAULT_HOLD_CATEGORIES),
             json.dumps(DEFAULT_QA_DOCUMENTS),
+            json.dumps(DEFAULT_ROLE_PERMISSIONS),
             now,
             "Ade Iksan Ramdani"
         ))
@@ -570,9 +595,11 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
         user_id = payload.get("sub")
         conn = get_db()
         row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
-        conn.close()
         if not row or not row["active"]:
+            conn.close()
             raise HTTPException(status_code=401, detail="Pengguna tidak aktif atau tidak ditemukan.")
+        perms = PermissionService.get_permissions(conn).get(row["role"], {})
+        conn.close()
         return {
             "id": row["id"],
             "email": row["email"],
@@ -580,7 +607,8 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
             "role": row["role"],
             "is_pic": bool(row["is_pic"]),
             "active": bool(row["active"]),
-            "created_at": row["created_at"]
+            "created_at": row["created_at"],
+            "permissions": perms
         }
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Sesi berakhir atau token tidak valid.")
@@ -611,11 +639,15 @@ class LoginRequest(BaseModel):
 def login(req: LoginRequest):
     conn = get_db()
     user = conn.execute("SELECT * FROM users WHERE email = ?", (req.email.strip().lower(),)).fetchone()
-    conn.close()
     if not user or not verify_password(req.password, user["password_hash"]):
+        conn.close()
         raise HTTPException(status_code=400, detail="Email atau password salah.")
     if not user["active"]:
+        conn.close()
         raise HTTPException(status_code=403, detail="Akun dinonaktifkan.")
+    
+    perms = PermissionService.get_permissions(conn).get(user["role"], {})
+    conn.close()
     
     token = create_jwt(user["id"], user["email"], user["role"])
     user_dict = {
@@ -625,7 +657,8 @@ def login(req: LoginRequest):
         "role": user["role"],
         "is_pic": bool(user["is_pic"]),
         "active": bool(user["active"]),
-        "created_at": user["created_at"]
+        "created_at": user["created_at"],
+        "permissions": perms
     }
     log_activity(user["id"], user["name"], "login", "auth", user["id"], "Login berhasil")
     return {"token": token, "user": user_dict}
@@ -666,6 +699,23 @@ def get_pics():
 @app.get("/api/users")
 def get_users(admin: dict = Depends(require_admin)):
     conn = get_db()
+    # 1. Pull latest users from Supabase if available
+    if SUPABASE_KEY and SUPABASE_URL:
+        try:
+            r = requests.get(f"{SUPABASE_URL}/rest/v1/users?order=created_at.asc", headers=get_sb_headers(), timeout=4)
+            if r.status_code == 200 and r.json():
+                for u in r.json():
+                    conn.execute("""
+                        INSERT OR REPLACE INTO users (id, email, name, password_hash, role, is_pic, active, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        u["id"], u["email"], u["name"], u["password_hash"], u.get("role", "user"),
+                        u.get("is_pic", 1), u.get("active", 1), u.get("created_at")
+                    ))
+                conn.commit()
+        except Exception as e:
+            print("Notice: fetch users from Supabase warning:", e)
+
     rows = conn.execute("SELECT id, email, name, role, is_pic, active, created_at FROM users ORDER BY created_at ASC").fetchall()
     conn.close()
     return [{
@@ -698,12 +748,35 @@ def create_user(req: CreateUserRequest, admin: dict = Depends(require_admin)):
     
     uid = str(uuid.uuid4())
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    pw_hash = hash_password(req.password)
     conn.execute("""
         INSERT INTO users (id, email, name, password_hash, role, is_pic, active, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (uid, email, req.name.strip(), hash_password(req.password), req.role, 1 if req.is_pic else 0, 1, now))
+    """, (uid, email, req.name.strip(), pw_hash, req.role, 1 if req.is_pic else 0, 1, now))
     conn.commit()
     conn.close()
+
+    # Sync to Supabase Cloud
+    if SUPABASE_KEY and SUPABASE_URL:
+        try:
+            requests.post(
+                f"{SUPABASE_URL}/rest/v1/users",
+                headers={**get_sb_headers(), "Prefer": "resolution=merge-duplicates"},
+                json=[{
+                    "id": uid,
+                    "email": email,
+                    "name": req.name.strip(),
+                    "password_hash": pw_hash,
+                    "role": req.role,
+                    "is_pic": 1 if req.is_pic else 0,
+                    "active": 1,
+                    "created_at": now
+                }],
+                timeout=4
+            )
+        except Exception as e:
+            print("Notice: create user Supabase sync warning:", e)
+
     log_activity(admin["id"], admin["name"], "create_user", "user", uid, f"Membuat akun {email} ({req.role})")
     return {"id": uid, "email": email, "name": req.name, "role": req.role, "is_pic": req.is_pic, "active": True, "created_at": now}
 
@@ -729,8 +802,115 @@ def update_user(user_id: str, req: UpdateUserRequest, admin: dict = Depends(requ
     """, (req.name.strip(), req.role, 1 if req.is_pic else 0, 1 if req.active else 0, pw_hash, user_id))
     conn.commit()
     conn.close()
+
+    # Sync to Supabase Cloud
+    if SUPABASE_KEY and SUPABASE_URL:
+        try:
+            patch_body = {
+                "name": req.name.strip(),
+                "role": req.role,
+                "is_pic": 1 if req.is_pic else 0,
+                "active": 1 if req.active else 0
+            }
+            if req.password and len(req.password) >= 8:
+                patch_body["password_hash"] = pw_hash
+            requests.patch(
+                f"{SUPABASE_URL}/rest/v1/users?id=eq.{user_id}",
+                headers=get_sb_headers(),
+                json=patch_body,
+                timeout=4
+            )
+        except Exception as e:
+            print("Notice: update user Supabase sync warning:", e)
+
     log_activity(admin["id"], admin["name"], "update_user", "user", user_id, f"Memperbarui akun {u['email']}")
     return {"message": "Pengguna berhasil diperbarui"}
+
+@app.delete("/api/users/{user_id}")
+def delete_user(user_id: str, admin: dict = Depends(require_admin)):
+    if user_id == admin["id"]:
+        raise HTTPException(status_code=400, detail="Tidak dapat menghapus akun Anda sendiri.")
+    conn = get_db()
+    u = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not u:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Pengguna tidak ditemukan.")
+    
+    conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+    # Sync delete to Supabase Cloud
+    if SUPABASE_KEY and SUPABASE_URL:
+        try:
+            requests.delete(
+                f"{SUPABASE_URL}/rest/v1/users?id=eq.{user_id}",
+                headers=get_sb_headers(),
+                timeout=4
+            )
+        except Exception as e:
+            print("Notice: delete user Supabase sync warning:", e)
+
+    log_activity(admin["id"], admin["name"], "delete_user", "user", user_id, f"Menghapus akun {u['email']}")
+    return {"message": "Pengguna berhasil dihapus"}
+
+# ----------------- RBAC PERMISSIONS -----------------
+@app.get("/api/permissions")
+def get_permissions(admin: dict = Depends(require_admin)):
+    conn = get_db()
+    # Pull latest settings from Supabase if available
+    if SUPABASE_KEY and SUPABASE_URL:
+        try:
+            r = requests.get(f"{SUPABASE_URL}/rest/v1/settings?id=eq.global", headers=get_sb_headers(), timeout=4)
+            if r.status_code == 200 and r.json():
+                s_data = r.json()[0]
+                if s_data.get("role_permissions_json"):
+                    conn.execute("""
+                        UPDATE settings SET role_permissions_json = ? WHERE id = 'global'
+                    """, (s_data["role_permissions_json"],))
+                    conn.commit()
+        except Exception as e:
+            print("Notice: fetch permissions from Supabase warning:", e)
+
+    perms = PermissionService.get_permissions(conn)
+    conn.close()
+    return {
+        "permissions": perms,
+        "roles": ROLE_METADATA,
+        "definitions": PERMISSION_DEFINITIONS
+    }
+
+class UpdatePermissionsRequest(BaseModel):
+    permissions: Dict[str, Dict[str, bool]]
+
+@app.put("/api/permissions")
+def update_permissions(req: UpdatePermissionsRequest, admin: dict = Depends(require_admin)):
+    conn = get_db()
+    updated = PermissionService.save_permissions(conn, req.permissions, admin["name"])
+    conn.commit()
+    conn.close()
+
+    # Push to Supabase Cloud
+    if SUPABASE_KEY and SUPABASE_URL:
+        try:
+            requests.patch(
+                f"{SUPABASE_URL}/rest/v1/settings?id=eq.global",
+                headers=get_sb_headers(),
+                json={
+                    "role_permissions_json": json.dumps(updated),
+                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "updated_by_name": admin["name"]
+                },
+                timeout=4
+            )
+        except Exception as e:
+            print("Notice: push permissions to Supabase warning:", e)
+
+    log_activity(admin["id"], admin["name"], "update_permissions", "rbac", "global", "Memperbarui matriks otorisasi hak akses peran sistem")
+    return {
+        "message": "Matriks hak akses berhasil diperbarui",
+        "permissions": updated
+    }
 
 # ----------------- SETTINGS -----------------
 @app.get("/api/settings")
@@ -743,14 +923,15 @@ def get_settings():
             if r.status_code == 200 and r.json():
                 s_data = r.json()[0]
                 conn.execute("""
-                    INSERT OR REPLACE INTO settings (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, updated_at, updated_by_name)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO settings (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, role_permissions_json, updated_at, updated_by_name)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     "global",
                     s_data.get("required_json") or "{}",
                     s_data.get("duplicate_rule") or "within_document",
                     s_data.get("hold_categories_json") or "[]",
                     s_data.get("qa_documents_json") or "{}",
+                    s_data.get("role_permissions_json") or "{}",
                     s_data.get("updated_at") or "",
                     s_data.get("updated_by_name") or ""
                 ))
@@ -784,6 +965,7 @@ def update_settings(req: SettingsRequest, admin: dict = Depends(require_admin)):
                 "duplicate_rule": res["duplicate_rule"],
                 "hold_categories_json": json.dumps(res["hold_categories"]),
                 "qa_documents_json": json.dumps(res["qa_documents"]),
+                "role_permissions_json": json.dumps(res.get("role_permissions", DEFAULT_ROLE_PERMISSIONS)),
                 "updated_at": res["updated_at"],
                 "updated_by_name": admin["name"]
             }]
@@ -1541,6 +1723,14 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
         raise HTTPException(status_code=400, detail="Minimal 1 baris material harus diisi.")
     
     conn = get_db()
+    if not PermissionService.has_permission(conn, user.get("role", "user"), "tally_create"):
+        conn.close()
+        raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user.get('role')}' tidak memiliki izin 'tally_create' untuk membuat dokumen Tally Sheet.")
+    
+    if req.action == "submit_to_admin" and not PermissionService.has_permission(conn, user.get("role", "user"), "tally_submit"):
+        conn.close()
+        raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user.get('role')}' tidak memiliki izin 'tally_submit' untuk menyerahkan dokumen ke Admin.")
+
     validate_items(conn, req.items, req.action)
 
     sheet_id = str(uuid.uuid4())
@@ -1754,6 +1944,14 @@ def get_tally_sheet(sheet_id: str):
 @app.put("/api/tally-sheets/{sheet_id}")
 def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends(get_current_user)):
     conn = get_db()
+    if not PermissionService.has_permission(conn, user.get("role", "user"), "tally_edit"):
+        conn.close()
+        raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user.get('role')}' tidak memiliki izin 'tally_edit' untuk mengubah dokumen Tally Sheet.")
+
+    if req.action == "submit_to_admin" and not PermissionService.has_permission(conn, user.get("role", "user"), "tally_submit"):
+        conn.close()
+        raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user.get('role')}' tidak memiliki izin 'tally_submit' untuk menyerahkan dokumen ke Admin.")
+
     sync_from_supabase_if_needed(conn, sheet_id=sheet_id)
     sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
     if not sheet:

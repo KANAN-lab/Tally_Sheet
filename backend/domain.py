@@ -20,6 +20,102 @@ DEFAULT_WORKFLOW_STAGES = [
     {"id": "qc", "name": "3. Quality Control", "role": "qc", "desc": "Uji Mutu Fisik & Stock Ter-UU"}
 ]
 
+ROLE_METADATA = [
+    {"role": "admin", "label": "Super Administrator", "desc": "Akses kontrol penuh ke seluruh sistem dan konfigurasi master"},
+    {"role": "warehouse_admin", "label": "Admin Warehouse", "desc": "Verifikasi dokumen kedatangan, cek PO SAP, dan disposisi ke QC"},
+    {"role": "checker", "label": "Checker Gudang", "desc": "Pemeriksaan fisik material, batch, kuantiti, dan pembuatan draf tally"},
+    {"role": "qc", "label": "Quality Control (QC)", "desc": "Inspeksi mutu, uji organoleptik/lab, dan approval Stock Ter-UU"},
+    {"role": "user", "label": "Viewer / Staff Gudang", "desc": "Melihat data dokumen dan memantau status kedatangan"}
+]
+
+PERMISSION_DEFINITIONS = [
+    {
+        "module": "tally",
+        "module_name": "Modul Tally Sheet (Penerimaan Material)",
+        "permissions": [
+            {"key": "tally_view", "label": "Lihat Daftar & Detail Tally", "desc": "Melihat daftar dokumen tally sheet dan rincian item material"},
+            {"key": "tally_create", "label": "Buat Dokumen Baru", "desc": "Membuat draf tally sheet kedatangan material baru"},
+            {"key": "tally_edit", "label": "Edit Draf Tally", "desc": "Mengubah informasi surat jalan, nopol, kontainer, dan baris material"},
+            {"key": "tally_submit", "label": "Kirim ke Admin WH", "desc": "Menyerahkan draf tally sheet ke Admin Warehouse untuk verifikasi"},
+            {"key": "tally_delete", "label": "Hapus Draf Tally", "desc": "Menghapus dokumen tally sheet yang masih berstatus draf"}
+        ]
+    },
+    {
+        "module": "warehouse_admin",
+        "module_name": "Modul Verifikasi Gudang (Admin Warehouse)",
+        "permissions": [
+            {"key": "admin_verify", "label": "Verifikasi & Teruskan ke QC", "desc": "Memvalidasi kesesuaian dokumen vs PO SAP dan mengajukan uji mutu ke Tim QC"},
+            {"key": "admin_hold", "label": "Tahan Dokumen (Hold Admin)", "desc": "Menahan alur dokumen jika ditemukan selisih kuantiti atau kendala dokumen"},
+            {"key": "return_to_checker", "label": "Kembalikan ke Checker", "desc": "Mengembalikan dokumen ke Checker untuk perbaikan data fisik"}
+        ]
+    },
+    {
+        "module": "qc",
+        "module_name": "Modul Uji Mutu & Kualitas (Quality Control)",
+        "permissions": [
+            {"key": "qc_approve", "label": "Approve Mutu (Stock Ter-UU)", "desc": "Meluluskan inspeksi mutu dan meresmikan status Selesai / Stock Ter-UU"},
+            {"key": "qc_hold", "label": "Tahan Uji Mutu (QC Hold)", "desc": "Menahan dokumen jika sampel uji laboratorium/organoleptik memerlukan waktu"},
+            {"key": "qc_reject", "label": "Tolak Mutu (Reject QC)", "desc": "Menolak penerimaan material jika mutu tidak memenuhi standar QA"}
+        ]
+    },
+    {
+        "module": "print_export",
+        "module_name": "Modul Cetak & Pelaporan Dokumen",
+        "permissions": [
+            {"key": "print_tally", "label": "Cetak Lembar Tally Sheet", "desc": "Mencetak formulir resmi Tally Sheet (SOP.WH-D.01)"},
+            {"key": "print_ba", "label": "Cetak Berita Acara", "desc": "Mencetak Berita Acara Penerimaan Barang Import (SOP.WH-D.02)"},
+            {"key": "export_reports", "label": "Export Rekapitulasi Audit ISO", "desc": "Mengunduh file Excel multi-sheet resmi laporan audit ISO"}
+        ]
+    },
+    {
+        "module": "master_admin",
+        "module_name": "Modul Master Data & Administrator",
+        "permissions": [
+            {"key": "manage_master", "label": "Kelola Master Data", "desc": "Upload & maintenance master data Material dan Supplier (MKVZ)"},
+            {"key": "manage_settings", "label": "Kelola Pengaturan Sistem", "desc": "Mengubah kategori kendala hold, aturan duplikasi, dan nomor dokumen QA"},
+            {"key": "manage_users", "label": "Kelola Akun & Hak Akses", "desc": "Menambah, mengedit, menonaktifkan pengguna, dan mengatur matriks otorisasi"}
+        ]
+    }
+]
+
+DEFAULT_ROLE_PERMISSIONS = {
+    "admin": {
+        "tally_view": True, "tally_create": True, "tally_edit": True, "tally_submit": True, "tally_delete": True,
+        "admin_verify": True, "admin_hold": True, "return_to_checker": True,
+        "qc_approve": True, "qc_hold": True, "qc_reject": True,
+        "print_tally": True, "print_ba": True, "export_reports": True,
+        "manage_master": True, "manage_settings": True, "manage_users": True
+    },
+    "warehouse_admin": {
+        "tally_view": True, "tally_create": True, "tally_edit": True, "tally_submit": True, "tally_delete": False,
+        "admin_verify": True, "admin_hold": True, "return_to_checker": True,
+        "qc_approve": False, "qc_hold": False, "qc_reject": False,
+        "print_tally": True, "print_ba": True, "export_reports": True,
+        "manage_master": True, "manage_settings": False, "manage_users": False
+    },
+    "checker": {
+        "tally_view": True, "tally_create": True, "tally_edit": True, "tally_submit": True, "tally_delete": False,
+        "admin_verify": False, "admin_hold": False, "return_to_checker": False,
+        "qc_approve": False, "qc_hold": False, "qc_reject": False,
+        "print_tally": True, "print_ba": True, "export_reports": False,
+        "manage_master": False, "manage_settings": False, "manage_users": False
+    },
+    "qc": {
+        "tally_view": True, "tally_create": False, "tally_edit": False, "tally_submit": False, "tally_delete": False,
+        "admin_verify": False, "admin_hold": False, "return_to_checker": False,
+        "qc_approve": True, "qc_hold": True, "qc_reject": True,
+        "print_tally": True, "print_ba": True, "export_reports": True,
+        "manage_master": False, "manage_settings": False, "manage_users": False
+    },
+    "user": {
+        "tally_view": True, "tally_create": False, "tally_edit": False, "tally_submit": False, "tally_delete": False,
+        "admin_verify": False, "admin_hold": False, "return_to_checker": False,
+        "qc_approve": False, "qc_hold": False, "qc_reject": False,
+        "print_tally": True, "print_ba": False, "export_reports": False,
+        "manage_master": False, "manage_settings": False, "manage_users": False
+    }
+}
+
 DEFAULT_QA_DOCUMENTS = {
     "TALLY_SHEET": {
         "code": "SOP.WH-D.01",
@@ -135,7 +231,7 @@ class BeritaAcaraRecord:
 
 # ----------------- OOP: SETTINGS SERVICE -----------------
 class SettingsService:
-    """Manages application-wide settings with zero hardcoding."""
+    """Manages application-wide settings with dynamic configuration."""
     
     @staticmethod
     def get_settings(conn) -> Dict[str, Any]:
@@ -154,6 +250,7 @@ class SettingsService:
                 "hold_categories": DEFAULT_HOLD_CATEGORIES,
                 "workflow_stages": DEFAULT_WORKFLOW_STAGES,
                 "qa_documents": DEFAULT_QA_DOCUMENTS,
+                "role_permissions": DEFAULT_ROLE_PERMISSIONS,
                 "updated_at": "",
                 "updated_by_name": ""
             }
@@ -180,6 +277,9 @@ class SettingsService:
                     qa_docs = {**DEFAULT_QA_DOCUMENTS, **loaded_qa}
             except Exception:
                 pass
+
+        # Load dynamic Role Permissions
+        role_perms = PermissionService.get_permissions(conn)
                 
         return {
             "id": "global",
@@ -188,6 +288,7 @@ class SettingsService:
             "hold_categories": categories,
             "workflow_stages": DEFAULT_WORKFLOW_STAGES,
             "qa_documents": qa_docs,
+            "role_permissions": role_perms,
             "updated_at": row["updated_at"],
             "updated_by_name": row["updated_by_name"]
         }
@@ -201,11 +302,17 @@ class SettingsService:
 
         qa_docs_to_save = {**DEFAULT_QA_DOCUMENTS, **(qa_documents or {})}
 
+        # Preserve existing permissions
+        existing_row = conn.execute("SELECT * FROM settings WHERE id = 'global'").fetchone()
+        existing_perms_json = json.dumps(DEFAULT_ROLE_PERMISSIONS)
+        if existing_row and "role_permissions_json" in existing_row.keys() and existing_row["role_permissions_json"]:
+            existing_perms_json = existing_row["role_permissions_json"]
+
         conn.execute("""
             INSERT OR REPLACE INTO settings 
-            (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, updated_at, updated_by_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, ("global", json.dumps(required), duplicate_rule, json.dumps(cats), json.dumps(qa_docs_to_save), now, admin_name))
+            (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, role_permissions_json, updated_at, updated_by_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("global", json.dumps(required), duplicate_rule, json.dumps(cats), json.dumps(qa_docs_to_save), existing_perms_json, now, admin_name))
         
         return {
             "id": "global",
@@ -214,9 +321,64 @@ class SettingsService:
             "hold_categories": cats,
             "workflow_stages": DEFAULT_WORKFLOW_STAGES,
             "qa_documents": qa_docs_to_save,
+            "role_permissions": json.loads(existing_perms_json),
             "updated_at": now,
             "updated_by_name": admin_name
         }
+
+
+# ----------------- OOP: PERMISSION SERVICE (RBAC) -----------------
+class PermissionService:
+    """
+    OOP RBAC (Role-Based Access Control) Service.
+    Mengelola matriks perizinan peran pengguna dan memvalidasi wewenang eksekusi aksi secara dinamis.
+    """
+    @classmethod
+    def get_permissions(cls, conn) -> Dict[str, Dict[str, bool]]:
+        try:
+            row = conn.execute("SELECT * FROM settings WHERE id = 'global'").fetchone()
+            if row and "role_permissions_json" in row.keys() and row["role_permissions_json"]:
+                loaded = json.loads(row["role_permissions_json"])
+                if isinstance(loaded, dict) and len(loaded) > 0:
+                    merged = {}
+                    for r, default_perms in DEFAULT_ROLE_PERMISSIONS.items():
+                        merged[r] = {**default_perms, **loaded.get(r, {})}
+                    return merged
+        except Exception:
+            pass
+        return DEFAULT_ROLE_PERMISSIONS
+
+    @classmethod
+    def save_permissions(cls, conn, permissions: Dict[str, Dict[str, bool]], admin_name: str) -> Dict[str, Dict[str, bool]]:
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        current_perms = cls.get_permissions(conn)
+        # Deep merge
+        updated = {}
+        for r, default_perms in DEFAULT_ROLE_PERMISSIONS.items():
+            updated[r] = {**default_perms, **(permissions.get(r) or {})}
+        
+        # Ensure column exists
+        try:
+            cols = [col[1] for col in conn.execute("PRAGMA table_info(settings)").fetchall()]
+            if "role_permissions_json" not in cols:
+                conn.execute("ALTER TABLE settings ADD COLUMN role_permissions_json TEXT DEFAULT '{}'")
+        except Exception:
+            pass
+
+        conn.execute("""
+            UPDATE settings 
+            SET role_permissions_json = ?, updated_at = ?, updated_by_name = ?
+            WHERE id = 'global'
+        """, (json.dumps(updated), now, admin_name))
+        return updated
+
+    @classmethod
+    def has_permission(cls, conn, role: str, perm_key: str) -> bool:
+        if role == "admin":
+            return True  # Super administrator retains master access
+        perms = cls.get_permissions(conn)
+        role_perms = perms.get(role, {})
+        return bool(role_perms.get(perm_key, False))
 
 
 # ----------------- OOP: WORKFLOW MANAGER -----------------
@@ -279,8 +441,8 @@ class WorkflowManager:
         if action == "submit_to_admin":
             if status not in ("draft", "admin_hold"):
                 raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat diserahkan ke Admin. Hanya dokumen Draft atau Revisi yang dapat dikirim.")
-            if not is_checker and not is_admin:
-                raise HTTPException(status_code=403, detail="Hanya Checker atau Admin yang dapat menyerahkan dokumen.")
+            if not PermissionService.has_permission(conn, user_role, "tally_submit"):
+                raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user_role}' tidak memiliki izin 'tally_submit' untuk menyerahkan dokumen.")
             new_status = "waiting_admin"
             new_handler_role = "warehouse_admin"
             log_detail = f"Checker ({user['name']}) menyerahkan dokumen kedatangan ke Admin Warehouse"
@@ -289,8 +451,8 @@ class WorkflowManager:
         elif action == "admin_hold":
             if status not in ("waiting_admin", "waiting_admin_1"):
                 raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat ditahan Admin. Dokumen harus dalam status Menunggu Verifikasi Admin.")
-            if not is_admin:
-                raise HTTPException(status_code=403, detail="Hanya Admin Warehouse yang dapat menahan dokumen pada tahap verifikasi.")
+            if not PermissionService.has_permission(conn, user_role, "admin_hold"):
+                raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user_role}' tidak memiliki izin 'admin_hold' untuk menahan dokumen.")
             if not reason:
                 raise HTTPException(status_code=400, detail="Alasan penahanan dokumen (Hold Reason) wajib diisi.")
             new_status = "admin_hold"
@@ -303,8 +465,8 @@ class WorkflowManager:
         elif action == "send_to_qc":
             if status not in ("waiting_admin", "waiting_admin_1", "admin_hold"):
                 raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat diteruskan ke QC. Dokumen harus dalam status Menunggu Verifikasi Admin.")
-            if not is_admin:
-                raise HTTPException(status_code=403, detail="Hanya Admin Warehouse yang dapat meneruskan dokumen ke Tim QC.")
+            if not PermissionService.has_permission(conn, user_role, "admin_verify"):
+                raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user_role}' tidak memiliki izin 'admin_verify' untuk memverifikasi dokumen ke QC.")
             new_status = "waiting_qc"
             new_handler_role = "qc"
             log_detail = f"Admin Warehouse ({user['name']}) memverifikasi dokumen & meneruskan ke Tim QC untuk sampling/uji mutu"
@@ -313,8 +475,8 @@ class WorkflowManager:
         elif action == "return_to_checker":
             if status not in ("waiting_admin", "waiting_admin_1", "admin_hold"):
                 raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat dikembalikan ke Checker.")
-            if not is_admin:
-                raise HTTPException(status_code=403, detail="Hanya Admin Warehouse yang dapat mengembalikan dokumen ke Checker.")
+            if not PermissionService.has_permission(conn, user_role, "return_to_checker"):
+                raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user_role}' tidak memiliki izin 'return_to_checker' untuk mengembalikan dokumen ke Checker.")
             if not reason:
                 raise HTTPException(status_code=400, detail="Alasan pengembalian ke Checker wajib diisi.")
             new_status = "draft"
@@ -327,8 +489,8 @@ class WorkflowManager:
         elif action == "qc_hold":
             if status not in ("waiting_qc",):
                 raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat ditahan QC. Dokumen harus dalam status Dalam Pemeriksaan QC.")
-            if not is_qc:
-                raise HTTPException(status_code=403, detail="Hanya Tim QC yang dapat menahan dokumen pada tahap inspeksi mutu.")
+            if not PermissionService.has_permission(conn, user_role, "qc_hold"):
+                raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user_role}' tidak memiliki izin 'qc_hold' untuk menahan uji mutu.")
             if not reason:
                 raise HTTPException(status_code=400, detail="Alasan penahanan QC (Hold Reason) wajib diisi.")
             new_status = "qc_hold"
@@ -341,8 +503,8 @@ class WorkflowManager:
         elif action == "qc_approve":
             if status not in ("waiting_qc", "qc_hold"):
                 raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat disetujui QC. Dokumen harus dalam status Dalam Pemeriksaan QC.")
-            if not is_qc:
-                raise HTTPException(status_code=403, detail="Hanya Tim QC yang berwenang menyetujui mutu material.")
+            if not PermissionService.has_permission(conn, user_role, "qc_approve"):
+                raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user_role}' tidak memiliki izin 'qc_approve' untuk menyetujui mutu material.")
             # QC tidak perlu nomor COA!
             new_status = "completed"
             new_handler_role = "closed"
@@ -359,8 +521,8 @@ class WorkflowManager:
         elif action == "qc_reject":
             if status not in ("waiting_qc", "qc_hold"):
                 raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat ditolak QC. Dokumen harus dalam status Dalam Pemeriksaan QC.")
-            if not is_qc:
-                raise HTTPException(status_code=403, detail="Hanya Tim QC yang berwenang menolak material.")
+            if not PermissionService.has_permission(conn, user_role, "qc_reject"):
+                raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user_role}' tidak memiliki izin 'qc_reject' untuk menolak mutu material.")
             if not reason:
                 raise HTTPException(status_code=400, detail="Alasan penolakan mutu QC wajib diisi.")
             new_status = "cancelled"

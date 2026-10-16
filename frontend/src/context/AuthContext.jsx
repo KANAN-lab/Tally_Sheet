@@ -26,7 +26,16 @@ export function AuthProvider({ children }) {
     setUser(false);
   }, []);
 
-  return <AuthContext.Provider value={{ user, login, logout }}>{children}</AuthContext.Provider>;
+  const can = useCallback((permKey, fallback = false) => {
+    if (!user) return false;
+    if (user.role === "admin") return true;
+    if (user.permissions && typeof user.permissions[permKey] === "boolean") {
+      return user.permissions[permKey];
+    }
+    return fallback;
+  }, [user]);
+
+  return <AuthContext.Provider value={{ user, login, logout, can }}>{children}</AuthContext.Provider>;
 }
 
 export const useAuth = () => useContext(AuthContext);

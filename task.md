@@ -12,7 +12,7 @@ Dokumen ini melacak status pengerjaan fitur, perbaikan bug, arsitektur sistem, d
 | **UI/UX & Wizard Editor** | 7 | 0 | 7 |
 | **Standar Dokumen QA & Berita Acara** | 4 | 0 | 4 |
 | **Integrasi, Cloud Parity & Sinkronisasi Data** | 6 | 0 | 6 |
-| **Manajemen Pengguna & Hak Akses** | 3 | 0 | 3 |
+| **Manajemen Pengguna & Hak Akses** | 4 | 0 | 4 |
 | **Tindakan User & Pengujian Live** | 0 | 2 | 2 |
 | **Pengembangan Lanjutan (Backlog / Opsional)** | 1 | 2 | 3 |
 
@@ -90,14 +90,22 @@ Dokumen ini melacak status pengerjaan fitur, perbaikan bug, arsitektur sistem, d
 - [x] **Sinkronisasi Cache Serverless**:
   - Kolom header lengkap (`delivery_note_no`, `po_no`, `arrival_date`, `truck_plate`, `container_no`, `has_ba`, `ba_no`, `ba_date`, `ba_notes`, `current_handler_role`, dll.) tersinkronisasi otomatis saat inisialisasi serverless.
 
-### F. Manajemen Pengguna & Hak Akses
-- [x] **4 Akun Demo Bawaan Sistem**:
+### F. Manajemen Pengguna & Pengendalian Hak Akses (RBAC Matrix)
+- [x] **Manajemen Pengguna Terpadu (CRUD User + Supabase Cloud Sync)**:
+  - Form dialog pendaftaran & edit akun dengan 5 Peran resmi: `checker` (Checker Gudang), `warehouse_admin` (Admin Warehouse), `qc` (Quality Control Inspector), `admin` (Super Administrator), dan `user` (Viewer/Staff).
+  - Sinkronisasi instan dua arah (`INSERT`, `PATCH`, `DELETE`) ke tabel `public.users` di Supabase Cloud PostgreSQL sehingga akun yang dibuat/diedit tidak hilang saat serverless restart.
+  - Fitur pencarian instan (nama/email), filter peran, filter status aktif, dan tombol hapus akun permanen dengan konfirmasi modal SweetAlert2.
+- [x] **Matriks Otorisasi Hak Akses (Dynamic Role-Based Access Control)**:
+  - Tab *"Matriks Otorisasi Hak Akses (RBAC)"* langsung di menu `/users` Administrator.
+  - Memungkinkan Administrator mengendalikan izin 17 fitur sistem (Buat Tally, Edit Draf, Submit ke Admin, Verifikasi WH, Hold Dokumen, Approval QC, Cetak Dokumen, Export Excel, Master Data, dll.) secara interaktif via toggle switch per peran.
+  - Backend OOP `PermissionService` dan frontend `WorkflowService` mengecek izin secara dinamis sebelum mengeksekusi setiap aksi atau transisi status.
+  - Fitur *"Reset Default SOP"* untuk mengembalikan matriks otorisasi ke standar operasional pabrik.
+  - Persistensi matriks perizinan ke kolom `role_permissions_json` di tabel `settings` Supabase Cloud.
+- [x] **Akun Bawaan Sistem**:
   - **Checker**: `checker@tally.com` (Password: `Admin123!`)
   - **Admin Warehouse**: `warehouse@tally.com` (Password: `Admin123!`)
   - **Quality Control**: `qc@tally.com` (Password: `Admin123!`)
   - **Super Administrator**: `admin@tally.com` (Password: `Admin123!`)
-- [x] **Role-Based Access Control (RBAC)**:
-  - Otorisasi tombol aksi dan izin edit sesuai role yang sedang aktif. Dokumen yang telah masuk tahap verifikasi atau berstatus selesai terkunci otomatis dari modifikasi sembarangan.
 
 ---
 
@@ -105,8 +113,8 @@ Dokumen ini melacak status pengerjaan fitur, perbaikan bug, arsitektur sistem, d
 
 | No | Tindakan | Penanggung Jawab | Keterangan |
 | :---: | :--- | :---: | :--- |
-| **1** | **Jalankan SQL Migration di Supabase Cloud** | **User / Admin DB** | File [`supabase_schema.sql`](file:///d:/2.%20FILE%20MEETING/Dashboard/Tally%20Sheet/supabase_schema.sql) telah diperbarui dengan skema tabel `suppliers`, kolom QA document registry, dan RLS policies baru. Buka **Supabase Dashboard → SQL Editor**, paste isi file [`supabase_schema.sql`](file:///d:/2.%20FILE%20MEETING/Dashboard/Tally%20Sheet/supabase_schema.sql), dan klik **Run**. |
-| **2** | **Uji Coba Alur Penuh & Cetak Dokumen** | **Tim QA / User** | Uji coba alur di [tally-incoming.vercel.app](https://tally-incoming.vercel.app/): Buat draf Tally Sheet baru dengan Nopol & opsi Berita Acara, uji auto-format No. Container ISO, verifikasi hingga status *"Stock Ter-UU"*, lalu uji cetak lembar Tally Sheet (`SOP.WH-D.01`) dan Berita Acara (`SOP.WH-D.02`). |
+| **1** | **Jalankan SQL Migration di Supabase Cloud** | **User / Admin DB** | File [`supabase_schema.sql`](file:///d:/2.%20FILE%20MEETING/Dashboard/Tally%20Sheet/supabase_schema.sql) telah diperbarui dengan kolom `role_permissions_json` pada tabel `settings`, skema tabel `suppliers`, kolom QA registry, dan RLS policies baru. Buka **Supabase Dashboard → SQL Editor**, paste isi file [`supabase_schema.sql`](file:///d:/2.%20FILE%20MEETING/Dashboard/Tally%20Sheet/supabase_schema.sql), dan klik **Run**. |
+| **2** | **Uji Coba Pengguna & Matriks Hak Akses** | **Tim QA / User** | Login di [tally-incoming.vercel.app](https://tally-incoming.vercel.app/) sebagai `admin@tally.com`, buka menu **Pengguna & Hak Akses**, uji coba pembuatan akun baru dengan role spesifik, lalu buka tab **Matriks Otorisasi Hak Akses (RBAC)** untuk menguji toggle izin fitur dan verifikasi penerapannya saat login sebagai akun terkait. |
 
 ---
 

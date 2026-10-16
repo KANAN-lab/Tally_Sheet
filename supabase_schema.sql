@@ -32,11 +32,13 @@ CREATE TABLE IF NOT EXISTS public.settings (
     duplicate_rule TEXT NOT NULL,
     hold_categories_json TEXT DEFAULT '[]',
     qa_documents_json TEXT DEFAULT '{}',
+    role_permissions_json TEXT DEFAULT '{}',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
     updated_by_name TEXT NOT NULL
 );
 ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS hold_categories_json TEXT DEFAULT '[]';
 ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS qa_documents_json TEXT DEFAULT '{}';
+ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS role_permissions_json TEXT DEFAULT '{}';
 
 -- 3. MASTER VERSIONS TABLE
 CREATE TABLE IF NOT EXISTS public.master_versions (
@@ -304,13 +306,14 @@ ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, rol
 INSERT INTO public.users (id, email, name, password_hash, role, is_pic, active, created_at)
 VALUES ('w3333333-3333-4333-8333-333333333333', 'warehouse@tally.com', 'Hendra Admin WH', '4c1e340fbf3c22ca4dd18336c73d8c66b5e57bba40ab2cc90fd071f442dd611b', 'warehouse_admin', 1, 1, '2026-10-15T04:18:33.504198+00:00')
 ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, role = EXCLUDED.role;
-INSERT INTO public.settings (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, updated_at, updated_by_name)
+INSERT INTO public.settings (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, role_permissions_json, updated_at, updated_by_name)
 VALUES (
     'global',
     '{"batch_fisik": true, "supplier_batch": true, "expired_date": true, "production_date": true, "pic": true}',
     'within_document',
     '["COA Belum Lengkap / Kurang", "Kuantiti Fisik Selisih vs Surat Jalan / PO", "Kualitas Fisik Tidak Sesuai", "Dokumen Surat Jalan Buram / Rusak", "Pemeriksaan Organoleptik / Lab Tertunda", "Lain-lain"]',
     '{"TALLY_SHEET": {"code": "SOP.WH-D.01", "title": "FORM TALLY SHEET PENERIMAAN MATERIAL", "revision": "01", "effective_date": "01 Januari 2024", "plant": "PT DIAMOND COLD STORAGE - PLANT 2111 (CIBITUNG)"}, "BERITA_ACARA_IMPORT": {"code": "SOP.WH-D.02", "title": "BERITA ACARA PENERIMAAN BARANG IMPORT", "revision": "01", "effective_date": "01 Januari 2024", "plant": "PT DIAMOND COLD STORAGE - PLANT 2111 (CIBITUNG)"}}',
+    '{"admin": {"tally_view": true, "tally_create": true, "tally_edit": true, "tally_submit": true, "tally_delete": true, "admin_verify": true, "admin_hold": true, "return_to_checker": true, "qc_approve": true, "qc_hold": true, "qc_reject": true, "print_tally": true, "print_ba": true, "export_reports": true, "manage_master": true, "manage_settings": true, "manage_users": true}, "warehouse_admin": {"tally_view": true, "tally_create": true, "tally_edit": true, "tally_submit": true, "tally_delete": false, "admin_verify": true, "admin_hold": true, "return_to_checker": true, "qc_approve": false, "qc_hold": false, "qc_reject": false, "print_tally": true, "print_ba": true, "export_reports": true, "manage_master": true, "manage_settings": false, "manage_users": false}, "checker": {"tally_view": true, "tally_create": true, "tally_edit": true, "tally_submit": true, "tally_delete": false, "admin_verify": false, "admin_hold": false, "return_to_checker": false, "qc_approve": false, "qc_hold": false, "qc_reject": false, "print_tally": true, "print_ba": true, "export_reports": false, "manage_master": false, "manage_settings": false, "manage_users": false}, "qc": {"tally_view": true, "tally_create": false, "tally_edit": false, "tally_submit": false, "tally_delete": false, "admin_verify": false, "admin_hold": false, "return_to_checker": false, "qc_approve": true, "qc_hold": true, "qc_reject": true, "print_tally": true, "print_ba": true, "export_reports": true, "manage_master": false, "manage_settings": false, "manage_users": false}, "user": {"tally_view": true, "tally_create": false, "tally_edit": false, "tally_submit": false, "tally_delete": false, "admin_verify": false, "admin_hold": false, "return_to_checker": false, "qc_approve": false, "qc_hold": false, "qc_reject": false, "print_tally": true, "print_ba": false, "export_reports": false, "manage_master": false, "manage_settings": false, "manage_users": false}}',
     timezone('utc', now()),
     'Ade Iksan Ramdani'
 )
@@ -319,6 +322,7 @@ ON CONFLICT (id) DO UPDATE SET
     duplicate_rule = EXCLUDED.duplicate_rule,
     hold_categories_json = EXCLUDED.hold_categories_json,
     qa_documents_json = EXCLUDED.qa_documents_json,
+    role_permissions_json = COALESCE(NULLIF(public.settings.role_permissions_json, '{}'), EXCLUDED.role_permissions_json),
     updated_at = EXCLUDED.updated_at,
     updated_by_name = EXCLUDED.updated_by_name;
 INSERT INTO public.master_versions (id, version, filename, mode, uploaded_by, uploaded_by_name, uploaded_at, total_rows, valid_rows, error_rows, inserted, updated, deactivated, active_total)

@@ -7,7 +7,7 @@ export const NAV = [
   { to: "/tally", label: "Tally Sheet", icon: ClipboardList, id: "tally" },
   { to: "/reports", label: "Laporan & Audit", icon: FileSpreadsheet, id: "reports" },
   { to: "/master", label: "Master Data", icon: Database, id: "master" },
-  { to: "/users", label: "Pengguna", icon: Users, admin: true, id: "users" },
+  { to: "/users", label: "Pengguna & Hak Akses", icon: Users, admin: true, id: "users" },
   { to: "/activity", label: "Riwayat Aktivitas", icon: History, admin: true, id: "activity" },
   { to: "/settings", label: "Pengaturan", icon: Settings, admin: true, id: "settings" },
 ];
