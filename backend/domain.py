@@ -62,8 +62,8 @@ PERMISSION_DEFINITIONS = [
         "module": "print_export",
         "module_name": "Modul Cetak & Pelaporan Dokumen",
         "permissions": [
-            {"key": "print_tally", "label": "Cetak Lembar Tally Sheet", "desc": "Mencetak formulir resmi Tally Sheet (SOP.WH-D.01)"},
-            {"key": "print_ba", "label": "Cetak Berita Acara", "desc": "Mencetak Berita Acara Penerimaan Barang Import (SOP.WH-D.02)"},
+            {"key": "print_tally", "label": "Cetak Lembar Tally Sheet", "desc": "Mencetak formulir resmi Tally Sheet Penerimaan"},
+            {"key": "print_ba", "label": "Cetak Berita Acara", "desc": "Mencetak Berita Acara Penerimaan Kontainer / Import"},
             {"key": "export_reports", "label": "Export Rekapitulasi Audit ISO", "desc": "Mengunduh file Excel multi-sheet resmi laporan audit ISO"}
         ]
     },
@@ -138,14 +138,17 @@ class QADocumentRegistry:
     """
     ISO 9001:2015 Clause 7.5 Controlled Document Master Registry for PT DIAMOND COLD STORAGE (PLANT 2111).
     Menjaga identitas resmi formulir terdaftar di Quality Assurance (QA).
-    Dapat diubah secara dinamis melalui Settings tanpa hardcode kode form.
+    Dikelola secara OOP murni dan dinamis melalui Settings tanpa hardcode kode form.
     """
+    KEY_TALLY = "TALLY_SHEET"
+    KEY_BERITA_ACARA = "BERITA_ACARA_IMPORT"
+
     @classmethod
     def get_all(cls, conn=None) -> Dict[str, Dict[str, str]]:
         if conn:
             try:
                 s = SettingsService.get_settings(conn)
-                if s.get("qa_documents"):
+                if s.get("qa_documents") and isinstance(s["qa_documents"], dict):
                     return s["qa_documents"]
             except Exception:
                 pass
@@ -154,23 +157,49 @@ class QADocumentRegistry:
     @classmethod
     def get_doc(cls, form_key: str, conn=None) -> Dict[str, str]:
         all_docs = cls.get_all(conn)
-        # Search case-insensitively
+        # Search case-insensitively or by semantic key
         for k, v in all_docs.items():
             if k.upper() == form_key.upper() or (form_key.lower() == "tally_sheet" and "tally" in k.lower()) or (form_key.lower() == "berita_acara" and "berita" in k.lower()):
                 return v
-        return all_docs.get(form_key, {
-            "code": "SOP.WH-D.00",
-            "title": "DOKUMEN TERKENDALI GUDANG",
-            "revision": "00",
-            "effective_date": "-",
-            "plant": "PT DIAMOND COLD STORAGE - PLANT 2111"
-        })
+        return all_docs.get(form_key, DEFAULT_QA_DOCUMENTS.get(form_key, {}))
+
+    @classmethod
+    def get_code(cls, form_key: str, conn=None) -> str:
+        doc = cls.get_doc(form_key, conn)
+        return str(doc.get("code", "")).strip()
+
+    @classmethod
+    def get_title(cls, form_key: str, conn=None) -> str:
+        doc = cls.get_doc(form_key, conn)
+        return str(doc.get("title", "")).strip()
+
+    @classmethod
+    def get_plant(cls, form_key: str, conn=None) -> str:
+        doc = cls.get_doc(form_key, conn)
+        return str(doc.get("plant", "")).strip()
+
+    @classmethod
+    def get_revision(cls, form_key: str, conn=None) -> str:
+        doc = cls.get_doc(form_key, conn)
+        return str(doc.get("revision", "01")).strip()
+
+    @classmethod
+    def resolve_tally_code(cls, current_val: Optional[str] = None, conn=None) -> str:
+        if current_val and str(current_val).strip():
+            return str(current_val).strip()
+        return cls.get_code(cls.KEY_TALLY, conn)
+
+    @classmethod
+    def resolve_ba_code(cls, current_val: Optional[str] = None, conn=None) -> str:
+        if current_val and str(current_val).strip():
+            return str(current_val).strip()
+        return cls.get_code(cls.KEY_BERITA_ACARA, conn)
 
 
 # ----------------- OOP: BERITA ACARA DOMAIN MODEL -----------------
 class BeritaAcaraRecord:
     """
-    OOP Model Berita Acara Penerimaan Barang Import (SOP.WH-D.02).
+    OOP Model Berita Acara Penerimaan Barang Import / Kontainer.
     Mengelola seluruh status inspeksi kontainer pengiriman (sebelum & sesudah bongkar)
     serta evaluasi kondisi fisik barang dan tanda tangan 3 peran.
     """

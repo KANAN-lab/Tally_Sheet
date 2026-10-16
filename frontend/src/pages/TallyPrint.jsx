@@ -57,7 +57,7 @@ export default function TallyPrint() {
             <tbody>
               <tr>
                 <td className="pr-3 font-bold text-slate-800">No. Dokumen Resmi (QA)</td>
-                <td>: <span className="font-mono font-black text-blue-950 bg-slate-100 px-1 py-0.5 rounded">{sheet.qa_doc_no || "SOP.WH-D.01"}</span> (Rev: 01)</td>
+                <td>: <span className="font-mono font-black text-blue-950 bg-slate-100 px-1 py-0.5 rounded">{sheet.qa_doc_no || ""}</span></td>
               </tr>
               <tr>
                 <td className="pr-3 font-semibold text-slate-600">No. Transaksi Tally Sheet</td>

@@ -127,8 +127,8 @@ def sync_from_supabase_if_needed(conn, sheet_id: str = None):
                         s.get("current_handler_role", "admin"), s.get("current_handler_name", ""),
                         s.get("pending_reason", ""), s.get("pending_category", ""),
                         s.get("qc_status", ""), s.get("qc_notes", ""), s.get("qc_by_name", ""), s.get("qc_at"),
-                        s.get("qa_doc_no", "SOP.WH-D.01"), 1 if s.get("has_berita_acara") else 0,
-                        s.get("ba_qa_doc_no", "SOP.WH-D.02"), s.get("ba_data_json", "{}"),
+                        QADocumentRegistry.resolve_tally_code(s.get("qa_doc_no"), conn), 1 if s.get("has_berita_acara") else 0,
+                        QADocumentRegistry.resolve_ba_code(s.get("ba_qa_doc_no"), conn), s.get("ba_data_json", "{}"),
                         s.get("ba_container_no", ""), s.get("ba_seal_no", ""),
                         s.get("ba_seal_condition", ""), s.get("ba_container_temp", "")
                     ))
@@ -155,8 +155,8 @@ def sync_from_supabase_if_needed(conn, sheet_id: str = None):
                         s.get("current_handler_role", "admin"), s.get("current_handler_name", ""),
                         s.get("pending_reason", ""), s.get("pending_category", ""),
                         s.get("qc_status", ""), s.get("qc_notes", ""), s.get("qc_by_name", ""), s.get("qc_at"),
-                        s.get("qa_doc_no", "SOP.WH-D.01"), 1 if s.get("has_berita_acara") else 0,
-                        s.get("ba_qa_doc_no", "SOP.WH-D.02"), s.get("ba_data_json", "{}"),
+                        QADocumentRegistry.resolve_tally_code(s.get("qa_doc_no"), conn), 1 if s.get("has_berita_acara") else 0,
+                        QADocumentRegistry.resolve_ba_code(s.get("ba_qa_doc_no"), conn), s.get("ba_data_json", "{}"),
                         s.get("ba_container_no", ""), s.get("ba_seal_no", ""),
                         s.get("ba_seal_condition", ""), s.get("ba_container_temp", ""),
                         s["id"]
@@ -422,9 +422,9 @@ def init_db():
             ("gr_by_id", "TEXT DEFAULT ''"),
             ("gr_at", "TEXT DEFAULT ''"),
             ("gr_notes", "TEXT DEFAULT ''"),
-            ("qa_doc_no", "TEXT DEFAULT 'SOP.WH-D.01'"),
+            ("qa_doc_no", "TEXT DEFAULT ''"),
             ("has_berita_acara", "INTEGER DEFAULT 0"),
-            ("ba_qa_doc_no", "TEXT DEFAULT 'SOP.WH-D.02'"),
+            ("ba_qa_doc_no", "TEXT DEFAULT ''"),
             ("ba_data_json", "TEXT DEFAULT '{}'"),
             ("ba_container_no", "TEXT DEFAULT ''"),
             ("ba_seal_no", "TEXT DEFAULT ''"),
@@ -1553,9 +1553,9 @@ class TallySheetInput(BaseModel):
     driver_name: Optional[str] = ""
     truck_plate: Optional[str] = ""
     action: str = "draft"  # "draft" | "submit_to_admin" | "final"
-    qa_doc_no: Optional[str] = "SOP.WH-D.01"
+    qa_doc_no: Optional[str] = None
     has_berita_acara: Optional[bool] = False
-    ba_qa_doc_no: Optional[str] = "SOP.WH-D.02"
+    ba_qa_doc_no: Optional[str] = None
     berita_acara: Optional[Dict[str, Any]] = None
     items: List[TallyItemInput]
 
@@ -1763,9 +1763,9 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
         conn.close()
         raise HTTPException(status_code=400, detail="Nomor Polisi Armada Truk wajib diisi (Mandatory).")
 
-    qa_code = (req.qa_doc_no or QADocumentRegistry.get_doc("TALLY_SHEET", conn).get("code", "SOP.WH-D.01")).strip()
+    qa_code = QADocumentRegistry.resolve_tally_code(req.qa_doc_no, conn)
     has_ba = 1 if req.has_berita_acara else 0
-    ba_qa_code = (req.ba_qa_doc_no or QADocumentRegistry.get_doc("BERITA_ACARA_IMPORT", conn).get("code", "SOP.WH-D.02")).strip()
+    ba_qa_code = QADocumentRegistry.resolve_ba_code(req.ba_qa_doc_no, conn)
     ba_rec = BeritaAcaraRecord(req.berita_acara) if req.berita_acara else BeritaAcaraRecord()
     ba_json = json.dumps(ba_rec.to_dict()) if has_ba else "{}"
     ba_cont = ba_rec.container_no if has_ba else ""
@@ -1929,9 +1929,9 @@ def get_tally_sheet(sheet_id: str):
         "cancelled_by": sheet["cancelled_by"],
         "cancelled_by_name": sheet["cancelled_by_name"],
         "cancel_reason": sheet["cancel_reason"],
-        "qa_doc_no": sheet["qa_doc_no"] if "qa_doc_no" in sheet.keys() and sheet["qa_doc_no"] else "SOP.WH-D.01",
+        "qa_doc_no": QADocumentRegistry.resolve_tally_code(sheet["qa_doc_no"] if "qa_doc_no" in sheet.keys() else None, conn),
         "has_berita_acara": bool(sheet["has_berita_acara"]) if "has_berita_acara" in sheet.keys() else False,
-        "ba_qa_doc_no": sheet["ba_qa_doc_no"] if "ba_qa_doc_no" in sheet.keys() and sheet["ba_qa_doc_no"] else "SOP.WH-D.02",
+        "ba_qa_doc_no": QADocumentRegistry.resolve_ba_code(sheet["ba_qa_doc_no"] if "ba_qa_doc_no" in sheet.keys() else None, conn),
         "ba_container_no": sheet["ba_container_no"] if "ba_container_no" in sheet.keys() else "",
         "ba_seal_no": sheet["ba_seal_no"] if "ba_seal_no" in sheet.keys() else "",
         "ba_seal_condition": sheet["ba_seal_condition"] if "ba_seal_condition" in sheet.keys() else "",
@@ -1992,9 +1992,11 @@ def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends
         conn.close()
         raise HTTPException(status_code=400, detail="Nomor Polisi Armada Truk wajib diisi (Mandatory).")
 
-    qa_code = (req.qa_doc_no or (sheet["qa_doc_no"] if "qa_doc_no" in sheet.keys() and sheet["qa_doc_no"] else QADocumentRegistry.get_doc("TALLY_SHEET", conn).get("code", "SOP.WH-D.01"))).strip()
+    current_sheet_qa = sheet["qa_doc_no"] if "qa_doc_no" in sheet.keys() else None
+    qa_code = QADocumentRegistry.resolve_tally_code(req.qa_doc_no or current_sheet_qa, conn)
     has_ba = 1 if req.has_berita_acara else (1 if (sheet.get("has_berita_acara") and req.has_berita_acara is not False) else 0)
-    ba_qa_code = (req.ba_qa_doc_no or (sheet["ba_qa_doc_no"] if "ba_qa_doc_no" in sheet.keys() and sheet["ba_qa_doc_no"] else QADocumentRegistry.get_doc("BERITA_ACARA_IMPORT", conn).get("code", "SOP.WH-D.02"))).strip()
+    current_sheet_ba_qa = sheet["ba_qa_doc_no"] if "ba_qa_doc_no" in sheet.keys() else None
+    ba_qa_code = QADocumentRegistry.resolve_ba_code(req.ba_qa_doc_no or current_sheet_ba_qa, conn)
 
     if req.berita_acara:
         ba_rec = BeritaAcaraRecord(req.berita_acara)
@@ -2297,7 +2299,7 @@ def export_tally_sheet(sheet_id: str):
     ws["B3"] = sheet["doc_no"]
     ws["B3"].font = meta_font
 
-    qa_code_val = sheet["qa_doc_no"] if ("qa_doc_no" in sheet.keys() and sheet["qa_doc_no"]) else "SOP.WH-D.01"
+    qa_code_val = QADocumentRegistry.resolve_tally_code(sheet.get("qa_doc_no"), conn)
     ws["C3"] = "No. Dokumen QA:"
     ws["C3"].font = meta_bold
     ws["D3"] = qa_code_val

@@ -131,7 +131,7 @@ export default function TallyEditor() {
     truck_plate: ""
   });
 
-  // Berita Acara Penerimaan Barang Import (SOP.WH-D.02)
+  // Berita Acara Penerimaan Barang Import / Kontainer
   const [hasBeritaAcara, setHasBeritaAcara] = useState(false);
   const [beritaAcara, setBeritaAcara] = useState({
     container_no: "",
@@ -310,9 +310,9 @@ export default function TallyEditor() {
       arrival_date: header.arrival_date || new Date().toISOString().slice(0, 10),
       truck_plate: header.truck_plate.trim(),
       action,
-      qa_doc_no: "SOP.WH-D.01",
+      qa_doc_no: sheet?.qa_doc_no || settings?.qa_documents?.TALLY_SHEET?.code || undefined,
       has_berita_acara: hasBeritaAcara,
-      ba_qa_doc_no: "SOP.WH-D.02",
+      ba_qa_doc_no: hasBeritaAcara ? (sheet?.ba_qa_doc_no || settings?.qa_documents?.BERITA_ACARA_IMPORT?.code || undefined) : undefined,
       berita_acara: hasBeritaAcara ? beritaAcara : null,
       items: filled.map((r) => ({
         material_code: r.material_code,
@@ -564,9 +564,11 @@ export default function TallyEditor() {
                       <span className="text-xs font-bold text-[#0B2149]">
                         Perlu Berita Acara Penerimaan Kontainer / Import?
                       </span>
-                      <span className="rounded bg-blue-100 px-2 py-0.5 text-[10px] font-mono font-bold text-blue-900 border border-blue-200">
-                        SOP.WH-D.02
-                      </span>
+                      {(sheet?.ba_qa_doc_no || settings?.qa_documents?.BERITA_ACARA_IMPORT?.code) && (
+                        <span className="rounded bg-blue-100 px-2 py-0.5 text-[10px] font-mono font-bold text-blue-900 border border-blue-200">
+                          {sheet?.ba_qa_doc_no || settings?.qa_documents?.BERITA_ACARA_IMPORT?.code}
+                        </span>
+                      )}
                     </div>
                     <p className="text-[11px] text-slate-500 leading-relaxed">
                       Aktifkan khusus penerimaan via kontainer pengiriman (Import / Raw Material dingin) yang mewajibkan formulir Berita Acara resmi QA.
@@ -953,9 +955,11 @@ export default function TallyEditor() {
                   <span className="text-xs font-bold text-[#0B2149] uppercase tracking-wider">
                     Form Berita Acara Penerimaan Kontainer Import
                   </span>
-                  <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-mono font-bold text-blue-900 border border-blue-200">
-                    SOP.WH-D.02
-                  </span>
+                  {(sheet?.ba_qa_doc_no || settings?.qa_documents?.BERITA_ACARA_IMPORT?.code) && (
+                    <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-mono font-bold text-blue-900 border border-blue-200">
+                      {sheet?.ba_qa_doc_no || settings?.qa_documents?.BERITA_ACARA_IMPORT?.code}
+                    </span>
+                  )}
                 </div>
                 <span className="text-[11px] font-semibold text-slate-500">Evaluasi Kondisi Setelah Pembongkaran</span>
               </div>

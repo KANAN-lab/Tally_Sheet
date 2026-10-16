@@ -35,7 +35,7 @@ export default function BeritaAcaraPrint() {
       {/* Top action bar (hidden on print) */}
       <div className="no-print mx-auto mb-4 flex max-w-[210mm] items-center justify-between gap-3 px-2">
         <span className="text-xs text-slate-600">
-          Pratinjau Cetak A4 · <strong>Berita Acara Penerimaan Barang Import</strong> (SOP.WH-D.02)
+          Pratinjau Cetak A4 · <strong>Berita Acara Penerimaan Barang Import</strong> {sheet.ba_qa_doc_no ? `(${sheet.ba_qa_doc_no})` : ""}
         </span>
         <button
           onClick={() => window.print()}
@@ -72,7 +72,7 @@ export default function BeritaAcaraPrint() {
               <tbody>
                 <tr className="border-b border-slate-800">
                   <td className="px-2 py-0.5 font-bold bg-slate-100">No. Dokumen QA</td>
-                  <td className="px-2 py-0.5 font-mono font-bold">: {sheet.ba_qa_doc_no || "SOP.WH-D.02"}</td>
+                  <td className="px-2 py-0.5 font-mono font-bold">: {sheet.ba_qa_doc_no || ""}</td>
                 </tr>
                 <tr className="border-b border-slate-800">
                   <td className="px-2 py-0.5 font-semibold text-slate-600">No. Transaksi</td>

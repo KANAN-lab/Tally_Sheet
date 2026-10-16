@@ -69,22 +69,7 @@ export default function Settings() {
     });
   };
 
-  const qaDocs = s.qa_documents || {
-    TALLY_SHEET: {
-      code: "SOP.WH-D.01",
-      title: "FORM TALLY SHEET PENERIMAAN MATERIAL",
-      revision: "01",
-      effective_date: "01 Januari 2024",
-      plant: "PT DIAMOND COLD STORAGE - PLANT 2111 (CIBITUNG)"
-    },
-    BERITA_ACARA_IMPORT: {
-      code: "SOP.WH-D.02",
-      title: "BERITA ACARA PENERIMAAN BARANG IMPORT",
-      revision: "01",
-      effective_date: "01 Januari 2024",
-      plant: "PT DIAMOND COLD STORAGE - PLANT 2111 (CIBITUNG)"
-    }
-  };
+  const qaDocs = s.qa_documents || {};
 
   const updateQaDoc = (docKey, field, val) => {
     setS((prev) => ({
@@ -292,7 +277,7 @@ export default function Settings() {
                   1. Formulir Tally Sheet Penerimaan
                 </span>
                 <span className="font-mono text-[11px] font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                  {qaDocs.TALLY_SHEET?.code || "SOP.WH-D.01"}
+                  {qaDocs.TALLY_SHEET?.code || ""}
                 </span>
               </div>
 
@@ -301,7 +286,7 @@ export default function Settings() {
                 <Input
                   value={qaDocs.TALLY_SHEET?.code || ""}
                   onChange={(e) => updateQaDoc("TALLY_SHEET", "code", e.target.value.toUpperCase())}
-                  placeholder="Contoh: SOP.WH-D.01"
+                  placeholder="Kode QA..."
                   className="mt-1 font-mono uppercase text-xs"
                   data-testid="input-qa-tally-code"
                 />
@@ -312,7 +297,7 @@ export default function Settings() {
                 <Input
                   value={qaDocs.TALLY_SHEET?.title || ""}
                   onChange={(e) => updateQaDoc("TALLY_SHEET", "title", e.target.value)}
-                  placeholder="FORM TALLY SHEET PENERIMAAN MATERIAL"
+                  placeholder="Judul Dokumen Resmi..."
                   className="mt-1 text-xs"
                   data-testid="input-qa-tally-title"
                 />
@@ -349,7 +334,7 @@ export default function Settings() {
                   2. Formulir Berita Acara Penerimaan Barang Import
                 </span>
                 <span className="font-mono text-[11px] font-bold text-purple-800 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
-                  {qaDocs.BERITA_ACARA_IMPORT?.code || "SOP.WH-D.02"}
+                  {qaDocs.BERITA_ACARA_IMPORT?.code || ""}
                 </span>
               </div>
 
@@ -358,7 +343,7 @@ export default function Settings() {
                 <Input
                   value={qaDocs.BERITA_ACARA_IMPORT?.code || ""}
                   onChange={(e) => updateQaDoc("BERITA_ACARA_IMPORT", "code", e.target.value.toUpperCase())}
-                  placeholder="Contoh: SOP.WH-D.02"
+                  placeholder="Kode QA..."
                   className="mt-1 font-mono uppercase text-xs"
                   data-testid="input-qa-ba-code"
                 />
