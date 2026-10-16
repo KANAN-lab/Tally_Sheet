@@ -327,11 +327,11 @@ export default function Settings() {
               </div>
             </div>
 
-            {/* Form 2: Berita Acara Penerimaan Barang Import */}
+            {/* Form 2: Berita Acara Penerimaan Barang (Universal: Import & Lokal) */}
             <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3">
               <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                 <span className="font-bold text-xs text-blue-950 uppercase tracking-wide">
-                  2. Formulir Berita Acara Penerimaan Barang Import
+                  2. Formulir Berita Acara Penerimaan Barang (Import & Lokal)
                 </span>
                 <span className="font-mono text-[11px] font-bold text-purple-800 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
                   {qaDocs.BERITA_ACARA_IMPORT?.code || ""}
@@ -354,7 +354,7 @@ export default function Settings() {
                 <Input
                   value={qaDocs.BERITA_ACARA_IMPORT?.title || ""}
                   onChange={(e) => updateQaDoc("BERITA_ACARA_IMPORT", "title", e.target.value)}
-                  placeholder="BERITA ACARA PENERIMAAN BARANG IMPORT"
+                  placeholder="BERITA ACARA PENERIMAAN BARANG"
                   className="mt-1 text-xs"
                   data-testid="input-qa-ba-title"
                 />

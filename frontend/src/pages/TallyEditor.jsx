@@ -131,9 +131,10 @@ export default function TallyEditor() {
     truck_plate: ""
   });
 
-  // Berita Acara Penerimaan Barang Import / Kontainer
+  // Berita Acara Penerimaan Barang (Universal: Import & Lokal)
   const [hasBeritaAcara, setHasBeritaAcara] = useState(false);
   const [beritaAcara, setBeritaAcara] = useState({
+    arrival_type: "import", // "import" | "local"
     container_no: "",
     seal_no: "",
     seal_condition: "Baik / Utuh",
@@ -260,11 +261,20 @@ export default function TallyEditor() {
       return toast.error("Nomor Polisi Armada Truk wajib diisi (Mandatory).");
     }
     if (hasBeritaAcara) {
-      if (!beritaAcara.container_no.trim()) {
-        return toast.error("Nomor Container wajib diisi jika Berita Acara aktif.");
-      }
-      if (!beritaAcara.seal_no.trim()) {
-        return toast.error("Nomor Segel Container wajib diisi jika Berita Acara aktif.");
+      if (beritaAcara.arrival_type === "import") {
+        if (!beritaAcara.container_no.trim()) {
+          return toast.error("Nomor Container wajib diisi untuk penerimaan Kontainer Import.");
+        }
+        if (!beritaAcara.seal_no.trim()) {
+          return toast.error("Nomor Segel Container wajib diisi untuk penerimaan Kontainer Import.");
+        }
+      } else {
+        if (!beritaAcara.container_no.trim()) {
+          updateBeritaAcara("container_no", header.truck_plate ? `BOX-${header.truck_plate}` : "BOX-TRUK");
+        }
+        if (!beritaAcara.seal_no.trim()) {
+          updateBeritaAcara("seal_no", "TANPA SEGEL");
+        }
       }
     }
     setCurrentStep(2);
@@ -554,7 +564,7 @@ export default function TallyEditor() {
               </div>
             </div>
 
-            {/* TOGGLE SWITCH: BERITA ACARA PENERIMAAN BARANG IMPORT */}
+            {/* TOGGLE SWITCH: BERITA ACARA PENERIMAAN BARANG (UNIVERSAL: IMPORT & LOKAL) */}
             <div className="sm:col-span-2 pt-2">
               <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50/70 via-slate-50 to-white p-4 sm:p-5 shadow-xs space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -562,7 +572,7 @@ export default function TallyEditor() {
                     <div className="flex items-center gap-2">
                       <Truck className="h-4 w-4 text-blue-700" />
                       <span className="text-xs font-bold text-[#0B2149]">
-                        Perlu Berita Acara Penerimaan Kontainer / Import?
+                        Perlu Formulir Berita Acara Penerimaan Barang (BAST)?
                       </span>
                       {(sheet?.ba_qa_doc_no || settings?.qa_documents?.BERITA_ACARA_IMPORT?.code) && (
                         <span className="rounded bg-blue-100 px-2 py-0.5 text-[10px] font-mono font-bold text-blue-900 border border-blue-200">
@@ -571,7 +581,7 @@ export default function TallyEditor() {
                       )}
                     </div>
                     <p className="text-[11px] text-slate-500 leading-relaxed">
-                      Aktifkan khusus penerimaan via kontainer pengiriman (Import / Raw Material dingin) yang mewajibkan formulir Berita Acara resmi QA.
+                      Aktifkan untuk penerimaan via Kontainer Laut (Import) maupun Armada Truk Domestik (Lokal) yang membutuhkan Berita Acara resmi QA.
                     </p>
                   </div>
 
@@ -590,26 +600,66 @@ export default function TallyEditor() {
                 {/* Subform: Informasi Kontainer & Kondisi Sebelum Dibongkar */}
                 {hasBeritaAcara && (
                   <div className="pt-4 border-t border-blue-100 space-y-4 animate-in fade-in duration-200" data-testid="ba-step1-section">
+                    {/* Selector Moda: Kontainer Import vs Truk Lokal */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 bg-white rounded-lg border border-blue-200 shadow-2xs">
+                      <span className="text-xs font-bold text-slate-800">Jenis Moda Kedatangan Armada:</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => updateBeritaAcara("arrival_type", "import")}
+                          className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                            beritaAcara.arrival_type === "import"
+                              ? "bg-blue-700 text-white shadow-xs"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                          }`}
+                          data-testid="btn-mode-import"
+                        >
+                          🚢 Kontainer Laut / Import
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateBeritaAcara("arrival_type", "local");
+                            if (!beritaAcara.container_no) {
+                              updateBeritaAcara("container_no", header.truck_plate ? `BOX-${header.truck_plate}` : "BOX-TRUK");
+                            }
+                            if (!beritaAcara.seal_no) {
+                              updateBeritaAcara("seal_no", "TANPA SEGEL");
+                            }
+                          }}
+                          className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                            beritaAcara.arrival_type === "local"
+                              ? "bg-purple-700 text-white shadow-xs"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                          }`}
+                          data-testid="btn-mode-local"
+                        >
+                          🚛 Armada Truk Lokal / Domestik
+                        </button>
+                      </div>
+                    </div>
+
                     <div className="text-xs font-bold text-blue-950 uppercase tracking-wider flex items-center gap-1.5">
                       <span className="h-2 w-2 rounded-full bg-blue-600" />
-                      Data Kontainer & Segel (Sebelum Dibongkar)
+                      Data {beritaAcara.arrival_type === "local" ? "Armada Truk & Pengaman" : "Kontainer & Segel"} (Sebelum Dibongkar)
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {/* No. Container */}
+                      {/* No. Container / No. Box */}
                       <div>
                         <div className="flex items-center justify-between">
                           <Label className="text-xs font-semibold text-slate-800">
-                            No. Container <span className="text-rose-600 font-bold">*</span>
+                            {beritaAcara.arrival_type === "local" ? "No. Box Truk / Identitas Armada" : "No. Container"}{" "}
+                            <span className="text-rose-600 font-bold">*</span>
                           </Label>
                           <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
-                            Format Standar ISO 6346
+                            {beritaAcara.arrival_type === "local" ? "Otomatis Nopol / No. Box" : "Format Standar ISO 6346"}
                           </span>
                         </div>
                         <Input
-                          placeholder="Contoh: TCLU 123456-7"
+                          placeholder={beritaAcara.arrival_type === "local" ? "Contoh: BOX-01 atau No. Polisi" : "Contoh: TCLU 123456-7"}
                           value={beritaAcara.container_no}
-                          onChange={(e) => updateBeritaAcara("container_no", formatContainerNo(e.target.value))}
+                          onChange={(e) => updateBeritaAcara("container_no", beritaAcara.arrival_type === "import" ? formatContainerNo(e.target.value) : e.target.value.toUpperCase())}
                           className="mt-1 font-mono uppercase text-xs"
                           data-testid="input-ba-container-no"
                         />
@@ -618,10 +668,13 @@ export default function TallyEditor() {
                       {/* No. Segel */}
                       <div>
                         <Label className="text-xs font-semibold text-slate-800">
-                          No. Segel <span className="text-rose-600 font-bold">*</span>
+                          {beritaAcara.arrival_type === "local" ? "No. Segel Gembok / Tali Pengaman (Opsional)" : "No. Segel"}{" "}
+                          <span className={beritaAcara.arrival_type === "local" ? "text-slate-400 font-normal" : "text-rose-600 font-bold"}>
+                            {beritaAcara.arrival_type === "local" ? "(Bisa dikosongkan)" : "*"}
+                          </span>
                         </Label>
                         <Input
-                          placeholder="Contoh: SEAL-8899120"
+                          placeholder={beritaAcara.arrival_type === "local" ? "Contoh: SEGEL-123 / TANPA SEGEL" : "Contoh: SEAL-8899120"}
                           value={beritaAcara.seal_no}
                           onChange={(e) => updateBeritaAcara("seal_no", e.target.value)}
                           className="mt-1 font-mono text-xs"
@@ -640,7 +693,7 @@ export default function TallyEditor() {
                         >
                           <option value="Baik / Utuh">Baik / Utuh</option>
                           <option value="Rusak / Putus">Rusak / Putus</option>
-                          <option value="Tidak Ada Segel">Tidak Ada Segel</option>
+                          <option value="Tidak Ada Segel">Tidak Ada Segel / Tanpa Segel</option>
                         </select>
                       </div>
 
@@ -953,7 +1006,7 @@ export default function TallyEditor() {
                 <div className="flex items-center gap-2">
                   <FileText className="h-4 w-4 text-blue-700" />
                   <span className="text-xs font-bold text-[#0B2149] uppercase tracking-wider">
-                    Form Berita Acara Penerimaan Kontainer Import
+                    Form Berita Acara Penerimaan Barang ({beritaAcara.arrival_type === "local" ? "Armada Truk Lokal" : "Kontainer Import"})
                   </span>
                   {(sheet?.ba_qa_doc_no || settings?.qa_documents?.BERITA_ACARA_IMPORT?.code) && (
                     <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-mono font-bold text-blue-900 border border-blue-200">
@@ -967,19 +1020,23 @@ export default function TallyEditor() {
               {/* Summary Header BA */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                 <div className="bg-white p-2.5 rounded-lg border border-slate-200">
-                  <span className="text-[10px] text-slate-500 block uppercase font-semibold">No. Container</span>
+                  <span className="text-[10px] text-slate-500 block uppercase font-semibold">
+                    {beritaAcara.arrival_type === "local" ? "No. Box Truk" : "No. Container"}
+                  </span>
                   <span className="font-mono font-bold text-blue-950">{beritaAcara.container_no || "-"}</span>
                 </div>
                 <div className="bg-white p-2.5 rounded-lg border border-slate-200">
-                  <span className="text-[10px] text-slate-500 block uppercase font-semibold">No. Segel</span>
+                  <span className="text-[10px] text-slate-500 block uppercase font-semibold">
+                    {beritaAcara.arrival_type === "local" ? "No. Segel/Gembok" : "No. Segel"}
+                  </span>
                   <span className="font-mono font-bold text-slate-800">{beritaAcara.seal_no || "-"}</span>
                 </div>
                 <div className="bg-white p-2.5 rounded-lg border border-slate-200">
-                  <span className="text-[10px] text-slate-500 block uppercase font-semibold">Kondisi Segel</span>
+                  <span className="text-[10px] text-slate-500 block uppercase font-semibold">Kondisi Pengaman</span>
                   <span className="font-medium text-slate-800">{beritaAcara.seal_condition || "-"}</span>
                 </div>
                 <div className="bg-white p-2.5 rounded-lg border border-slate-200">
-                  <span className="text-[10px] text-slate-500 block uppercase font-semibold">Suhu Container</span>
+                  <span className="text-[10px] text-slate-500 block uppercase font-semibold">Suhu Armada</span>
                   <span className="font-medium text-slate-800">{beritaAcara.container_temp_type} {beritaAcara.temp_celsius ? `(${beritaAcara.temp_celsius}°C)` : ""}</span>
                 </div>
               </div>

@@ -22,6 +22,7 @@ export default function BeritaAcaraPrint() {
   if (!sheet) return <div className="p-10 text-slate-500">Memuat Formulir Berita Acara...</div>;
 
   const ba = sheet.berita_acara || {};
+  const isImport = (ba.arrival_type || "import") === "import";
   const itemsText = sheet.items?.map((it) => it.material_name).filter(Boolean).slice(0, 3).join(", ") || "-";
 
   // Tanggal & Hari
@@ -35,7 +36,7 @@ export default function BeritaAcaraPrint() {
       {/* Top action bar (hidden on print) */}
       <div className="no-print mx-auto mb-4 flex max-w-[210mm] items-center justify-between gap-3 px-2">
         <span className="text-xs text-slate-600">
-          Pratinjau Cetak A4 · <strong>{sheet.ba_qa_meta?.title || "Berita Acara Penerimaan Barang Import"}</strong> {sheet.ba_qa_doc_no || sheet.ba_qa_meta?.code ? `(${sheet.ba_qa_doc_no || sheet.ba_qa_meta?.code})` : ""}
+          Pratinjau Cetak A4 · <strong>{sheet.ba_qa_meta?.title || "Berita Acara Penerimaan Barang"}</strong> {sheet.ba_qa_doc_no || sheet.ba_qa_meta?.code ? `(${sheet.ba_qa_doc_no || sheet.ba_qa_meta?.code})` : ""}
         </span>
         <button
           onClick={() => window.print()}
@@ -87,10 +88,26 @@ export default function BeritaAcaraPrint() {
           </div>
 
           {/* Document Title */}
-          <div className="text-center py-2">
+          <div className="text-center pt-1 pb-0.5">
             <h1 className="text-base font-extrabold tracking-wide uppercase text-slate-950 underline underline-offset-4">
-              {sheet.ba_qa_meta?.title || "BERITA ACARA PENERIMAAN BARANG IMPORT"}
+              {sheet.ba_qa_meta?.title || "BERITA ACARA PENERIMAAN BARANG"}
             </h1>
+          </div>
+
+          {/* Universal Mode Indicator (Import vs Lokal Checkbox) */}
+          <div className="flex items-center justify-center gap-8 py-1.5 px-4 bg-slate-50 border border-slate-300 rounded text-[11px] font-bold tracking-wide">
+            <div className="flex items-center gap-2">
+              <span className={`inline-flex items-center justify-center w-4 h-4 border border-slate-900 rounded-xs text-[11px] font-black ${isImport ? 'bg-slate-950 text-white' : 'bg-white text-transparent'}`}>
+                {isImport ? "✓" : ""}
+              </span>
+              <span className={isImport ? "text-slate-950 font-bold" : "text-slate-500"}>KEDATANGAN IMPORT (KONTAINER)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`inline-flex items-center justify-center w-4 h-4 border border-slate-900 rounded-xs text-[11px] font-black ${!isImport ? 'bg-slate-950 text-white' : 'bg-white text-transparent'}`}>
+                {!isImport ? "✓" : ""}
+              </span>
+              <span className={!isImport ? "text-slate-950 font-bold" : "text-slate-500"}>KEDATANGAN LOKAL (TRUK / EKSPEDISI DOMESTIK)</span>
+            </div>
           </div>
 
           {/* Form Header Info Table */}
@@ -113,27 +130,31 @@ export default function BeritaAcaraPrint() {
                   <td className="py-1 font-medium">{itemsText}</td>
                 </tr>
                 <tr>
-                  <td className="py-1 font-semibold text-slate-800">No Container</td>
+                  <td className="py-1 font-semibold text-slate-800">
+                    {isImport ? "No Container" : "No Container / Box Truk"}
+                  </td>
                   <td>:</td>
                   <td className="py-1">
                     <div className="flex items-center justify-between">
-                      <span className="font-mono font-bold text-slate-900">{ba.container_no || "-"}</span>
+                      <span className="font-mono font-bold text-slate-900">{ba.container_no || sheet.truck_plate || "-"}</span>
                       <span className="font-semibold text-slate-700">No Plat Mobil Trucking : <span className="font-mono font-bold">{sheet.truck_plate || "-"}</span></span>
                     </div>
                   </td>
                 </tr>
                 <tr>
-                  <td className="py-1 font-semibold text-slate-800">No Segel</td>
+                  <td className="py-1 font-semibold text-slate-800">
+                    {isImport ? "No Segel" : "No Segel / Gembok"}
+                  </td>
                   <td>:</td>
                   <td className="py-1">
                     <div className="flex items-center justify-between">
                       <span className="font-mono font-bold text-slate-900">{ba.seal_no || "-"}</span>
-                      <span className="font-semibold text-slate-700">Kondisi Segel : <span className="font-medium">{ba.seal_condition || "-"}</span></span>
+                      <span className="font-semibold text-slate-700">Kondisi Pengaman : <span className="font-medium">{ba.seal_condition || "-"}</span></span>
                     </div>
                   </td>
                 </tr>
                 <tr>
-                  <td className="py-1 font-semibold text-slate-800">Suhu container</td>
+                  <td className="py-1 font-semibold text-slate-800">Suhu Armada / Box</td>
                   <td>:</td>
                   <td className="py-1">
                     <span className="font-medium">
@@ -148,10 +169,10 @@ export default function BeritaAcaraPrint() {
             </table>
           </div>
 
-          {/* Section 1: KONDISI FISIK CONTAINER PENGIRIMAN */}
+          {/* Section 1: KONDISI FISIK CONTAINER / BAK TRUK PENGIRIMAN */}
           <div className="pt-2">
             <div className="text-center font-bold text-xs uppercase tracking-wider py-1 border-y border-slate-400 bg-slate-50">
-              ================= KONDISI FISIK CONTAINER PENGIRIMAN =================
+              ================= KONDISI FISIK CONTAINER / BAK TRUK PENGIRIMAN =================
             </div>
 
             <div className="text-[11px] space-y-3 pt-2">

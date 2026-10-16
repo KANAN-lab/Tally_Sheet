@@ -126,7 +126,7 @@ DEFAULT_QA_DOCUMENTS = {
     },
     "BERITA_ACARA_IMPORT": {
         "code": "SOP.WH-D.02",
-        "title": "BERITA ACARA PENERIMAAN BARANG IMPORT",
+        "title": "BERITA ACARA PENERIMAAN BARANG",
         "revision": "01",
         "effective_date": "01 Januari 2024",
         "plant": "PT DIAMOND COLD STORAGE - PLANT 2111 (CIBITUNG)"
@@ -209,18 +209,23 @@ class BeritaAcaraRecord:
     """
     def __init__(self, data: Optional[Dict[str, Any]] = None):
         data = data or {}
-        # Header Kontainer
+        # Jenis Kedatangan: "import" (Kontainer) | "local" (Armada Truk Domestik)
+        self.arrival_type = str(data.get("arrival_type", "import")).strip().lower()
+        if self.arrival_type not in ["import", "local"]:
+            self.arrival_type = "import"
+
+        # Header Kontainer / Armada
         self.container_no = str(data.get("container_no", "")).strip()
         self.seal_no = str(data.get("seal_no", "")).strip()
         self.seal_condition = str(data.get("seal_condition", "Baik / Utuh")).strip()
         self.container_temp_type = str(data.get("container_temp_type", "Frozen")).strip()  # Dry / Chiller / Frozen
         self.temp_celsius = str(data.get("temp_celsius", "")).strip()
 
-        # 1. Kondisi Fisik Kontainer Sebelum Dibongkar
+        # 1. Kondisi Fisik Kontainer / Bak Truk Sebelum Dibongkar
         self.floor_before = str(data.get("floor_before", "Rata, tidak ditemukan kebocoran, bersih, tidak berminyak")).strip()
         self.wall_before = str(data.get("wall_before", "Tidak penyok, tidak baret, tidak bolong")).strip()
 
-        # 2. Kondisi Fisik Kontainer Setelah Isi Kontainer Dibongkar
+        # 2. Kondisi Fisik Kontainer / Bak Truk Setelah Isi Dibongkar
         self.floor_after = str(data.get("floor_after", "Rata, tidak ditemukan kebocoran")).strip()
         self.wall_after = str(data.get("wall_after", "Tidak penyok, tidak baret, tidak bolong")).strip()
 
@@ -240,6 +245,7 @@ class BeritaAcaraRecord:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
+            "arrival_type": self.arrival_type,
             "container_no": self.container_no,
             "seal_no": self.seal_no,
             "seal_condition": self.seal_condition,

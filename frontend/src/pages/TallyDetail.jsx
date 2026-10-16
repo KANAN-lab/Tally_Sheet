@@ -521,7 +521,7 @@ export default function TallyDetail() {
               <div className="flex items-center gap-2">
                 <Truck className="h-4 w-4 text-blue-700" />
                 <span className="text-xs font-bold text-blue-950 uppercase tracking-wide">
-                  Berita Acara Penerimaan Barang Import {sheet.ba_qa_doc_no || sheet.ba_qa_meta?.code ? `(${sheet.ba_qa_doc_no || sheet.ba_qa_meta?.code})` : ""}
+                  Berita Acara Penerimaan Barang {sheet.berita_acara?.arrival_type === "local" ? "(Truk Lokal / Domestik)" : "(Kontainer Import)"} {sheet.ba_qa_doc_no || sheet.ba_qa_meta?.code ? `(${sheet.ba_qa_doc_no || sheet.ba_qa_meta?.code})` : ""}
                 </span>
               </div>
               <button
@@ -534,25 +534,29 @@ export default function TallyDetail() {
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
               <div className="bg-white p-2.5 rounded-lg border border-slate-200">
-                <span className="text-[10px] text-slate-500 block uppercase font-semibold">No. Container</span>
+                <span className="text-[10px] text-slate-500 block uppercase font-semibold">
+                  {sheet.berita_acara?.arrival_type === "local" ? "No. Box Truk" : "No. Container"}
+                </span>
                 <span className="font-mono font-bold text-blue-950">
                   {sheet.ba_container_no || sheet.berita_acara?.container_no || "-"}
                 </span>
               </div>
               <div className="bg-white p-2.5 rounded-lg border border-slate-200">
-                <span className="text-[10px] text-slate-500 block uppercase font-semibold">No. Segel</span>
+                <span className="text-[10px] text-slate-500 block uppercase font-semibold">
+                  {sheet.berita_acara?.arrival_type === "local" ? "No. Segel/Gembok" : "No. Segel"}
+                </span>
                 <span className="font-mono font-bold text-slate-800">
                   {sheet.ba_seal_no || sheet.berita_acara?.seal_no || "-"}
                 </span>
               </div>
               <div className="bg-white p-2.5 rounded-lg border border-slate-200">
-                <span className="text-[10px] text-slate-500 block uppercase font-semibold">Kondisi Segel</span>
+                <span className="text-[10px] text-slate-500 block uppercase font-semibold">Kondisi Pengaman</span>
                 <span className="font-medium text-slate-800">
                   {sheet.ba_seal_condition || sheet.berita_acara?.seal_condition || "-"}
                 </span>
               </div>
               <div className="bg-white p-2.5 rounded-lg border border-slate-200">
-                <span className="text-[10px] text-slate-500 block uppercase font-semibold">Suhu Container</span>
+                <span className="text-[10px] text-slate-500 block uppercase font-semibold">Suhu Armada</span>
                 <span className="font-medium text-slate-800">
                   {sheet.ba_container_temp || sheet.berita_acara?.container_temp_type || "-"}
                   {sheet.berita_acara?.temp_celsius ? ` (${sheet.berita_acara.temp_celsius}°C)` : ""}
