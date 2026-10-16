@@ -202,10 +202,10 @@ class SettingsService:
         qa_docs_to_save = {**DEFAULT_QA_DOCUMENTS, **(qa_documents or {})}
 
         conn.execute("""
-            UPDATE settings 
-            SET required_json = ?, duplicate_rule = ?, hold_categories_json = ?, qa_documents_json = ?, updated_at = ?, updated_by_name = ?
-            WHERE id = 'global'
-        """, (json.dumps(required), duplicate_rule, json.dumps(cats), json.dumps(qa_docs_to_save), now, admin_name))
+            INSERT OR REPLACE INTO settings 
+            (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, updated_at, updated_by_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, ("global", json.dumps(required), duplicate_rule, json.dumps(cats), json.dumps(qa_docs_to_save), now, admin_name))
         
         return {
             "id": "global",

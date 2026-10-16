@@ -169,6 +169,30 @@ def sync_from_supabase_if_needed(conn, sheet_id: str = None):
                             it.get("batch_fisik", ""), it.get("supplier_batch", ""), it.get("expired_date", ""),
                             it.get("production_date", ""), it.get("pic_id", ""), it.get("pic_name", "")
                         ))
+
+            # If specific sheet requested, also sync its tally_history from Supabase
+            if sheet_id:
+                try:
+                    target_id = sheets[0]["id"] if sheets else sheet_id
+                    r_hist = requests.get(
+                        f"{SUPABASE_URL}/rest/v1/tally_history?sheet_id=eq.{target_id}&order=revision.asc",
+                        headers=get_sb_headers(),
+                        timeout=4
+                    )
+                    if r_hist.status_code == 200:
+                        for h in r_hist.json():
+                            conn.execute("""
+                                INSERT OR REPLACE INTO tally_history 
+                                (id, sheet_id, action, revision, at, by_name, by_id, by_role, from_status, to_status, category, reason)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                h["id"], h["sheet_id"], h["action"], h.get("revision", 1), h["at"],
+                                h.get("by_name", ""), h.get("by_id", ""), h.get("by_role", "user"),
+                                h.get("from_status", ""), h.get("to_status", ""), h.get("category", ""), h.get("reason", "")
+                            ))
+                except Exception as e_hist:
+                    print("Notice: Supabase pull history warning:", e_hist)
+
             conn.commit()
     except Exception as e:
         print("Notice: Supabase pull warning:", e)
@@ -712,6 +736,28 @@ def update_user(user_id: str, req: UpdateUserRequest, admin: dict = Depends(requ
 @app.get("/api/settings")
 def get_settings():
     conn = get_db()
+    # 1. Pull latest settings from Supabase if available
+    if SUPABASE_KEY and SUPABASE_URL:
+        try:
+            r = requests.get(f"{SUPABASE_URL}/rest/v1/settings?id=eq.global", headers=get_sb_headers(), timeout=4)
+            if r.status_code == 200 and r.json():
+                s_data = r.json()[0]
+                conn.execute("""
+                    INSERT OR REPLACE INTO settings (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, updated_at, updated_by_name)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    "global",
+                    s_data.get("required_json") or "{}",
+                    s_data.get("duplicate_rule") or "within_document",
+                    s_data.get("hold_categories_json") or "[]",
+                    s_data.get("qa_documents_json") or "{}",
+                    s_data.get("updated_at") or "",
+                    s_data.get("updated_by_name") or ""
+                ))
+                conn.commit()
+        except Exception as e:
+            print("Notice: fetch settings from Supabase warning:", e)
+
     res = SettingsService.get_settings(conn)
     conn.close()
     return res
@@ -728,6 +774,29 @@ def update_settings(req: SettingsRequest, admin: dict = Depends(require_admin)):
     res = SettingsService.update_settings(conn, req.required, req.duplicate_rule, req.hold_categories or DEFAULT_HOLD_CATEGORIES, admin["name"], req.qa_documents)
     conn.commit()
     conn.close()
+
+    # 2. Push updated settings to Supabase for persistence across serverless lambdas
+    if SUPABASE_KEY and SUPABASE_URL:
+        try:
+            sb_payload = [{
+                "id": "global",
+                "required_json": json.dumps(res["required"]),
+                "duplicate_rule": res["duplicate_rule"],
+                "hold_categories_json": json.dumps(res["hold_categories"]),
+                "qa_documents_json": json.dumps(res["qa_documents"]),
+                "updated_at": res["updated_at"],
+                "updated_by_name": admin["name"]
+            }]
+            r_sb = requests.post(
+                f"{SUPABASE_URL}/rest/v1/settings",
+                headers={**get_sb_headers(), "Prefer": "resolution=merge-duplicates"},
+                json=sb_payload,
+                timeout=4
+            )
+            if r_sb.status_code >= 400:
+                print(f"Notice: Supabase settings sync error {r_sb.status_code}: {r_sb.text}")
+        except Exception as e:
+            print("Notice: push settings to Supabase warning:", e)
     
     req_str = ", ".join([k for k, v in req.required.items() if v])
     log_activity(admin["id"], admin["name"], "update_settings", "settings", "global", f"Kolom wajib: {req_str}; aturan duplikat: {req.duplicate_rule}; {len(res['hold_categories'])} kategori hold; QA Docs dinamis diperbarui")
@@ -738,6 +807,26 @@ def update_settings(req: SettingsRequest, admin: dict = Depends(require_admin)):
 def get_qa_documents():
     """Mengembalikan daftar nomor format resmi formulir terkendali ISO 9001:2015 QA dari Settings dinamis."""
     conn = get_db()
+    if SUPABASE_KEY and SUPABASE_URL:
+        try:
+            r = requests.get(f"{SUPABASE_URL}/rest/v1/settings?id=eq.global", headers=get_sb_headers(), timeout=4)
+            if r.status_code == 200 and r.json():
+                s_data = r.json()[0]
+                conn.execute("""
+                    INSERT OR REPLACE INTO settings (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, updated_at, updated_by_name)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    "global",
+                    s_data.get("required_json") or "{}",
+                    s_data.get("duplicate_rule") or "within_document",
+                    s_data.get("hold_categories_json") or "[]",
+                    s_data.get("qa_documents_json") or "{}",
+                    s_data.get("updated_at") or "",
+                    s_data.get("updated_by_name") or ""
+                ))
+                conn.commit()
+        except Exception as e:
+            pass
     res = QADocumentRegistry.get_all(conn)
     conn.close()
     return res
@@ -1915,6 +2004,31 @@ def get_tally_history(sheet_id: str):
     conn = get_db()
     sheet = conn.execute("SELECT id FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
     actual_id = sheet["id"] if sheet else sheet_id
+
+    # Sync history from Supabase cloud so serverless lambdas always have up-to-date audit trail
+    if SUPABASE_KEY and SUPABASE_URL:
+        try:
+            r = requests.get(
+                f"{SUPABASE_URL}/rest/v1/tally_history?sheet_id=eq.{actual_id}&order=revision.asc",
+                headers=get_sb_headers(),
+                timeout=4
+            )
+            if r.status_code == 200:
+                rows_sb = r.json()
+                for h in rows_sb:
+                    conn.execute("""
+                        INSERT OR REPLACE INTO tally_history 
+                        (id, sheet_id, action, revision, at, by_name, by_id, by_role, from_status, to_status, category, reason)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        h["id"], h["sheet_id"], h["action"], h.get("revision", 1), h["at"],
+                        h.get("by_name", ""), h.get("by_id", ""), h.get("by_role", "user"),
+                        h.get("from_status", ""), h.get("to_status", ""), h.get("category", ""), h.get("reason", "")
+                    ))
+                conn.commit()
+        except Exception as e:
+            print("Notice: fetch history from Supabase warning:", e)
+
     rows = conn.execute("SELECT * FROM tally_history WHERE sheet_id = ? ORDER BY revision ASC", (actual_id,)).fetchall()
     conn.close()
     return [{

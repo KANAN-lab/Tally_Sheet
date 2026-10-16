@@ -121,7 +121,7 @@ export default function Settings() {
   return (
     <div data-testid="settings-page" className="space-y-6">
       <PageHeader
-        title="Pengaturan Administrator (Zero Hardcode Engine)"
+        title="Pengaturan Administrator"
         subtitle={
           s.updated_at
             ? `Terakhir diperbarui pada ${fmtDateTime(s.updated_at)} oleh ${s.updated_by_name}`
@@ -202,12 +202,12 @@ export default function Settings() {
           </RadioGroup>
         </div>
 
-        {/* Dynamic Hold Categories (Zero Hardcoding) */}
+        {/* Dynamic Hold Categories */}
         <div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
           <div className="border-b pb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="font-display text-base font-bold text-[#0B2149] flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-amber-600" /> Kategori Kendala / Hold Reasons (Zero Hardcode)
+                <AlertTriangle className="h-5 w-5 text-amber-600" /> Kategori Kendala & Alasan Penahanan (Hold Reasons)
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
                 Kategori ini digunakan oleh Admin Warehouse dan Tim QC saat menahan atau menolak dokumen secara dinamis.
@@ -273,7 +273,7 @@ export default function Settings() {
           <div className="border-b pb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="font-display text-base font-bold text-[#0B2149] flex items-center gap-2">
-                <FileText className="h-5 w-5 text-blue-700" /> Standar Nomor Dokumen QA Terkendali (Zero Hardcode Registry)
+                <FileText className="h-5 w-5 text-blue-700" /> Standar Nomor Dokumen QA Terkendali (Master Registry)
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
                 Pendaftaran format nomor dokumen resmi, revisi, dan judul formulir ke Quality Assurance (QA) sesuai audit ISO 9001:2015.
