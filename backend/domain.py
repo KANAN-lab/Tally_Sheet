@@ -20,49 +20,55 @@ DEFAULT_WORKFLOW_STAGES = [
     {"id": "qc", "name": "3. Quality Control", "role": "qc", "desc": "Uji Mutu Fisik & Stock Ter-UU"}
 ]
 
+DEFAULT_QA_DOCUMENTS = {
+    "TALLY_SHEET": {
+        "code": "SOP.WH-D.01",
+        "title": "FORM TALLY SHEET PENERIMAAN MATERIAL",
+        "revision": "01",
+        "effective_date": "01 Januari 2024",
+        "plant": "PT DIAMOND COLD STORAGE - PLANT 2111 (CIBITUNG)"
+    },
+    "BERITA_ACARA_IMPORT": {
+        "code": "SOP.WH-D.02",
+        "title": "BERITA ACARA PENERIMAAN BARANG IMPORT",
+        "revision": "01",
+        "effective_date": "01 Januari 2024",
+        "plant": "PT DIAMOND COLD STORAGE - PLANT 2111 (CIBITUNG)"
+    }
+}
+
 # ----------------- OOP: QA CONTROLLED DOCUMENT REGISTRY -----------------
 class QADocumentRegistry:
     """
     ISO 9001:2015 Clause 7.5 Controlled Document Master Registry for PT DIAMOND COLD STORAGE (PLANT 2111).
     Menjaga identitas resmi formulir terdaftar di Quality Assurance (QA).
-    Contoh: Form Tally Sheet (SOP.WH-D.01), Form Berita Acara Penerimaan Import (SOP.WH-D.02).
+    Dapat diubah secara dinamis melalui Settings tanpa hardcode kode form.
     """
-    REGISTRY: Dict[str, Dict[str, str]] = {
-        "TALLY_SHEET": {
-            "doc_code": "SOP.WH-D.01",
-            "doc_title": "FORM TALLY SHEET PENERIMAAN MATERIAL",
-            "revision": "01",
-            "effective_date": "01 Januari 2024",
-            "retention_period": "2 Tahun",
-            "controlled_by": "QA / Document Control",
-            "plant": "PT DIAMOND COLD STORAGE - PLANT 2111 (CIBITUNG)"
-        },
-        "BERITA_ACARA_IMPORT": {
-            "doc_code": "SOP.WH-D.02",
-            "doc_title": "BERITA ACARA PENERIMAAN BARANG IMPORT",
-            "revision": "01",
-            "effective_date": "01 Januari 2024",
-            "retention_period": "3 Tahun",
-            "controlled_by": "QA / Document Control",
-            "plant": "PT DIAMOND COLD STORAGE - PLANT 2111 (CIBITUNG)"
-        }
-    }
+    @classmethod
+    def get_all(cls, conn=None) -> Dict[str, Dict[str, str]]:
+        if conn:
+            try:
+                s = SettingsService.get_settings(conn)
+                if s.get("qa_documents"):
+                    return s["qa_documents"]
+            except Exception:
+                pass
+        return DEFAULT_QA_DOCUMENTS
 
     @classmethod
-    def get_doc(cls, form_key: str) -> Dict[str, str]:
-        return cls.REGISTRY.get(form_key, {
-            "doc_code": "SOP.WH-D.00",
-            "doc_title": "DOKUMEN TERKENDALI GUDANG",
+    def get_doc(cls, form_key: str, conn=None) -> Dict[str, str]:
+        all_docs = cls.get_all(conn)
+        # Search case-insensitively
+        for k, v in all_docs.items():
+            if k.upper() == form_key.upper() or (form_key.lower() == "tally_sheet" and "tally" in k.lower()) or (form_key.lower() == "berita_acara" and "berita" in k.lower()):
+                return v
+        return all_docs.get(form_key, {
+            "code": "SOP.WH-D.00",
+            "title": "DOKUMEN TERKENDALI GUDANG",
             "revision": "00",
             "effective_date": "-",
-            "retention_period": "-",
-            "controlled_by": "QA",
             "plant": "PT DIAMOND COLD STORAGE - PLANT 2111"
         })
-
-    @classmethod
-    def get_all(cls) -> Dict[str, Dict[str, str]]:
-        return cls.REGISTRY
 
 
 # ----------------- OOP: BERITA ACARA DOMAIN MODEL -----------------
@@ -147,6 +153,7 @@ class SettingsService:
                 "duplicate_rule": "within_document",
                 "hold_categories": DEFAULT_HOLD_CATEGORIES,
                 "workflow_stages": DEFAULT_WORKFLOW_STAGES,
+                "qa_documents": DEFAULT_QA_DOCUMENTS,
                 "updated_at": "",
                 "updated_by_name": ""
             }
@@ -163,6 +170,16 @@ class SettingsService:
                     categories = loaded
             except Exception:
                 pass
+
+        # Load dynamic QA Documents
+        qa_docs = DEFAULT_QA_DOCUMENTS
+        if "qa_documents_json" in row.keys() and row["qa_documents_json"]:
+            try:
+                loaded_qa = json.loads(row["qa_documents_json"])
+                if isinstance(loaded_qa, dict) and len(loaded_qa) > 0:
+                    qa_docs = {**DEFAULT_QA_DOCUMENTS, **loaded_qa}
+            except Exception:
+                pass
                 
         return {
             "id": "global",
@@ -170,22 +187,25 @@ class SettingsService:
             "duplicate_rule": dup,
             "hold_categories": categories,
             "workflow_stages": DEFAULT_WORKFLOW_STAGES,
+            "qa_documents": qa_docs,
             "updated_at": row["updated_at"],
             "updated_by_name": row["updated_by_name"]
         }
 
     @staticmethod
-    def update_settings(conn, required: Dict[str, bool], duplicate_rule: str, hold_categories: List[str], admin_name: str) -> Dict[str, Any]:
+    def update_settings(conn, required: Dict[str, bool], duplicate_rule: str, hold_categories: List[str], admin_name: str, qa_documents: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         cats = [c.strip() for c in hold_categories if c and c.strip()]
         if not cats:
             cats = DEFAULT_HOLD_CATEGORIES
 
+        qa_docs_to_save = {**DEFAULT_QA_DOCUMENTS, **(qa_documents or {})}
+
         conn.execute("""
             UPDATE settings 
-            SET required_json = ?, duplicate_rule = ?, hold_categories_json = ?, updated_at = ?, updated_by_name = ?
+            SET required_json = ?, duplicate_rule = ?, hold_categories_json = ?, qa_documents_json = ?, updated_at = ?, updated_by_name = ?
             WHERE id = 'global'
-        """, (json.dumps(required), duplicate_rule, json.dumps(cats), now, admin_name))
+        """, (json.dumps(required), duplicate_rule, json.dumps(cats), json.dumps(qa_docs_to_save), now, admin_name))
         
         return {
             "id": "global",
@@ -193,6 +213,7 @@ class SettingsService:
             "duplicate_rule": duplicate_rule,
             "hold_categories": cats,
             "workflow_stages": DEFAULT_WORKFLOW_STAGES,
+            "qa_documents": qa_docs_to_save,
             "updated_at": now,
             "updated_by_name": admin_name
         }

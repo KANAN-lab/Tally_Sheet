@@ -59,3 +59,32 @@ export function formatTruckPlate(raw) {
   return val.substring(0, 3);
 }
 
+/**
+ * Standard ISO 6346 Container Number Formatter:
+ * 4 Uppercase Letters (Owner Code + Category 'U') + Space + 6 Serial Digits + Hyphen + 1 Check Digit
+ * Example: TCLU 123456-7
+ */
+export function formatContainerNo(raw) {
+  if (!raw) return "";
+  let val = String(raw).toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const letters = val.replace(/[^A-Z]/g, "").slice(0, 4);
+  const remaining = val.slice(letters.length);
+  const digits = remaining.replace(/[^0-9]/g, "").slice(0, 7);
+
+  if (letters.length === 0) {
+    return val.slice(0, 4);
+  }
+
+  let formatted = letters;
+  if (digits.length > 0) {
+    const serial = digits.slice(0, 6);
+    formatted += " " + serial;
+    if (digits.length > 6) {
+      const checkDigit = digits.slice(6, 7);
+      formatted += "-" + checkDigit;
+    }
+  }
+  return formatted;
+}
+
+

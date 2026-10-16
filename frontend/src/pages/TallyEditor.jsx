@@ -25,7 +25,7 @@ import TallyRow, { GRID } from "@/components/TallyRow";
 import { DetailSkeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/context/AuthContext";
 import { api, errMsg } from "@/lib/api";
-import { canEdit, formatTruckPlate } from "@/lib/format";
+import { canEdit, formatTruckPlate, formatContainerNo } from "@/lib/format";
 import { swalConfirm } from "@/lib/swal";
 
 const LABELS = {
@@ -596,13 +596,18 @@ export default function TallyEditor() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {/* No. Container */}
                       <div>
-                        <Label className="text-xs font-semibold text-slate-800">
-                          No. Container <span className="text-rose-600 font-bold">*</span>
-                        </Label>
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs font-semibold text-slate-800">
+                            No. Container <span className="text-rose-600 font-bold">*</span>
+                          </Label>
+                          <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
+                            Format Standar ISO 6346
+                          </span>
+                        </div>
                         <Input
                           placeholder="Contoh: TCLU 123456-7"
                           value={beritaAcara.container_no}
-                          onChange={(e) => updateBeritaAcara("container_no", e.target.value.toUpperCase())}
+                          onChange={(e) => updateBeritaAcara("container_no", formatContainerNo(e.target.value))}
                           className="mt-1 font-mono uppercase text-xs"
                           data-testid="input-ba-container-no"
                         />

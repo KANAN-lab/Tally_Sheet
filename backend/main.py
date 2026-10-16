@@ -20,9 +20,9 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 import requests
 
 try:
-    from domain import WorkflowManager, SettingsService, DEFAULT_HOLD_CATEGORIES, DEFAULT_WORKFLOW_STAGES, QADocumentRegistry, BeritaAcaraRecord
+    from domain import WorkflowManager, SettingsService, DEFAULT_HOLD_CATEGORIES, DEFAULT_WORKFLOW_STAGES, QADocumentRegistry, BeritaAcaraRecord, DEFAULT_QA_DOCUMENTS
 except ImportError:
-    from backend.domain import WorkflowManager, SettingsService, DEFAULT_HOLD_CATEGORIES, DEFAULT_WORKFLOW_STAGES, QADocumentRegistry, BeritaAcaraRecord
+    from backend.domain import WorkflowManager, SettingsService, DEFAULT_HOLD_CATEGORIES, DEFAULT_WORKFLOW_STAGES, QADocumentRegistry, BeritaAcaraRecord, DEFAULT_QA_DOCUMENTS
 
 # Constants
 SECRET_KEY = os.environ.get("SECRET_KEY", "tally_secret_key_production_grade_jwt_token")
@@ -105,8 +105,9 @@ def sync_from_supabase_if_needed(conn, sheet_id: str = None):
                         (id, doc_no, status, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at,
                          finalized_at, finalized_by, finalized_by_name, cancelled_at, cancelled_by, cancelled_by_name, cancel_reason,
                          delivery_note_no, po_no, supplier_code, supplier_name, arrival_date, driver_name, truck_plate,
-                         current_handler_role, current_handler_name, pending_reason, pending_category, qc_status, qc_notes, qc_by_name, qc_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         current_handler_role, current_handler_name, pending_reason, pending_category, qc_status, qc_notes, qc_by_name, qc_at,
+                         qa_doc_no, has_berita_acara, ba_qa_doc_no, ba_data_json, ba_container_no, ba_seal_no, ba_seal_condition, ba_container_temp)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         s["id"], s["doc_no"], clean_status, s["created_by"], s["created_by_name"],
                         s["created_at"], s["updated_by"], s["updated_by_name"], s["updated_at"],
@@ -117,7 +118,11 @@ def sync_from_supabase_if_needed(conn, sheet_id: str = None):
                         s.get("arrival_date", ""), s.get("driver_name", ""), s.get("truck_plate", ""),
                         s.get("current_handler_role", "admin"), s.get("current_handler_name", ""),
                         s.get("pending_reason", ""), s.get("pending_category", ""),
-                        s.get("qc_status", ""), s.get("qc_notes", ""), s.get("qc_by_name", ""), s.get("qc_at")
+                        s.get("qc_status", ""), s.get("qc_notes", ""), s.get("qc_by_name", ""), s.get("qc_at"),
+                        s.get("qa_doc_no", "SOP.WH-D.01"), 1 if s.get("has_berita_acara") else 0,
+                        s.get("ba_qa_doc_no", "SOP.WH-D.02"), s.get("ba_data_json", "{}"),
+                        s.get("ba_container_no", ""), s.get("ba_seal_no", ""),
+                        s.get("ba_seal_condition", ""), s.get("ba_container_temp", "")
                     ))
                 else:
                     conn.execute("""
@@ -128,7 +133,9 @@ def sync_from_supabase_if_needed(conn, sheet_id: str = None):
                             delivery_note_no = ?, po_no = ?, supplier_code = ?, supplier_name = ?,
                             arrival_date = ?, driver_name = ?, truck_plate = ?,
                             current_handler_role = ?, current_handler_name = ?,
-                            pending_reason = ?, pending_category = ?, qc_status = ?, qc_notes = ?, qc_by_name = ?, qc_at = ?
+                            pending_reason = ?, pending_category = ?, qc_status = ?, qc_notes = ?, qc_by_name = ?, qc_at = ?,
+                            qa_doc_no = ?, has_berita_acara = ?, ba_qa_doc_no = ?, ba_data_json = ?,
+                            ba_container_no = ?, ba_seal_no = ?, ba_seal_condition = ?, ba_container_temp = ?
                         WHERE id = ?
                     """, (
                         clean_status, s["updated_by"], s["updated_by_name"], s["updated_at"],
@@ -140,6 +147,10 @@ def sync_from_supabase_if_needed(conn, sheet_id: str = None):
                         s.get("current_handler_role", "admin"), s.get("current_handler_name", ""),
                         s.get("pending_reason", ""), s.get("pending_category", ""),
                         s.get("qc_status", ""), s.get("qc_notes", ""), s.get("qc_by_name", ""), s.get("qc_at"),
+                        s.get("qa_doc_no", "SOP.WH-D.01"), 1 if s.get("has_berita_acara") else 0,
+                        s.get("ba_qa_doc_no", "SOP.WH-D.02"), s.get("ba_data_json", "{}"),
+                        s.get("ba_container_no", ""), s.get("ba_seal_no", ""),
+                        s.get("ba_seal_condition", ""), s.get("ba_container_temp", ""),
                         s["id"]
                     ))
 
@@ -430,6 +441,8 @@ def init_db():
         set_cols = [col[1] for col in c.execute("PRAGMA table_info(settings)").fetchall()]
         if "hold_categories_json" not in set_cols:
             c.execute("ALTER TABLE settings ADD COLUMN hold_categories_json TEXT DEFAULT '[]'")
+        if "qa_documents_json" not in set_cols:
+            c.execute("ALTER TABLE settings ADD COLUMN qa_documents_json TEXT DEFAULT '{}'")
     except Exception as e:
         print("Notice: check settings columns:", e)
 
@@ -438,8 +451,8 @@ def init_db():
     if not cur.fetchone():
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         c.execute("""
-            INSERT INTO settings (id, required_json, duplicate_rule, hold_categories_json, updated_at, updated_by_name)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO settings (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, updated_at, updated_by_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
             "global",
             json.dumps({
@@ -451,6 +464,7 @@ def init_db():
             }),
             "within_document",
             json.dumps(DEFAULT_HOLD_CATEGORIES),
+            json.dumps(DEFAULT_QA_DOCUMENTS),
             now,
             "Ade Iksan Ramdani"
         ))
@@ -706,23 +720,27 @@ class SettingsRequest(BaseModel):
     required: Dict[str, bool]
     duplicate_rule: str
     hold_categories: Optional[List[str]] = None
+    qa_documents: Optional[Dict[str, Any]] = None
 
 @app.put("/api/settings")
 def update_settings(req: SettingsRequest, admin: dict = Depends(require_admin)):
     conn = get_db()
-    res = SettingsService.update_settings(conn, req.required, req.duplicate_rule, req.hold_categories or DEFAULT_HOLD_CATEGORIES, admin["name"])
+    res = SettingsService.update_settings(conn, req.required, req.duplicate_rule, req.hold_categories or DEFAULT_HOLD_CATEGORIES, admin["name"], req.qa_documents)
     conn.commit()
     conn.close()
     
     req_str = ", ".join([k for k, v in req.required.items() if v])
-    log_activity(admin["id"], admin["name"], "update_settings", "settings", "global", f"Kolom wajib: {req_str}; aturan duplikat: {req.duplicate_rule}; {len(res['hold_categories'])} kategori hold")
+    log_activity(admin["id"], admin["name"], "update_settings", "settings", "global", f"Kolom wajib: {req_str}; aturan duplikat: {req.duplicate_rule}; {len(res['hold_categories'])} kategori hold; QA Docs dinamis diperbarui")
     return res
 
 # ----------------- QA DOCUMENT CONTROL REGISTRY -----------------
 @app.get("/api/qa-docs")
 def get_qa_documents():
-    """Mengembalikan daftar nomor format resmi formulir terkendali ISO 9001:2015 QA."""
-    return QADocumentRegistry.get_all()
+    """Mengembalikan daftar nomor format resmi formulir terkendali ISO 9001:2015 QA dari Settings dinamis."""
+    conn = get_db()
+    res = QADocumentRegistry.get_all(conn)
+    conn.close()
+    return res
 
 
 # ----------------- DASHBOARD -----------------
@@ -1466,9 +1484,9 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
         conn.close()
         raise HTTPException(status_code=400, detail="Nomor Polisi Armada Truk wajib diisi (Mandatory).")
 
-    qa_code = (req.qa_doc_no or "SOP.WH-D.01").strip()
+    qa_code = (req.qa_doc_no or QADocumentRegistry.get_doc("TALLY_SHEET", conn).get("code", "SOP.WH-D.01")).strip()
     has_ba = 1 if req.has_berita_acara else 0
-    ba_qa_code = (req.ba_qa_doc_no or "SOP.WH-D.02").strip()
+    ba_qa_code = (req.ba_qa_doc_no or QADocumentRegistry.get_doc("BERITA_ACARA_IMPORT", conn).get("code", "SOP.WH-D.02")).strip()
     ba_rec = BeritaAcaraRecord(req.berita_acara) if req.berita_acara else BeritaAcaraRecord()
     ba_json = json.dumps(ba_rec.to_dict()) if has_ba else "{}"
     ba_cont = ba_rec.container_no if has_ba else ""
@@ -1540,6 +1558,9 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
         "supplier_code": sup_code, "supplier_name": sup_name,
         "arrival_date": arr_date, "driver_name": drv_name, "truck_plate": trk_plate,
         "current_handler_role": handler_role, "current_handler_name": handler_name,
+        "qa_doc_no": qa_code, "has_berita_acara": bool(has_ba), "ba_qa_doc_no": ba_qa_code,
+        "ba_data_json": ba_json, "ba_container_no": ba_cont, "ba_seal_no": ba_seal,
+        "ba_seal_condition": ba_seal_cond, "ba_container_temp": ba_temp,
         "created_by": user["id"], "created_by_name": user["name"], "created_at": now,
         "updated_by": user["id"], "updated_by_name": user["name"], "updated_at": now,
         "finalized_at": now if status == "completed" else None,
@@ -1684,9 +1705,9 @@ def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends
         conn.close()
         raise HTTPException(status_code=400, detail="Nomor Polisi Armada Truk wajib diisi (Mandatory).")
 
-    qa_code = (req.qa_doc_no or (sheet["qa_doc_no"] if "qa_doc_no" in sheet.keys() and sheet["qa_doc_no"] else "SOP.WH-D.01")).strip()
+    qa_code = (req.qa_doc_no or (sheet["qa_doc_no"] if "qa_doc_no" in sheet.keys() and sheet["qa_doc_no"] else QADocumentRegistry.get_doc("TALLY_SHEET", conn).get("code", "SOP.WH-D.01"))).strip()
     has_ba = 1 if req.has_berita_acara else (1 if (sheet.get("has_berita_acara") and req.has_berita_acara is not False) else 0)
-    ba_qa_code = (req.ba_qa_doc_no or (sheet["ba_qa_doc_no"] if "ba_qa_doc_no" in sheet.keys() and sheet["ba_qa_doc_no"] else "SOP.WH-D.02")).strip()
+    ba_qa_code = (req.ba_qa_doc_no or (sheet["ba_qa_doc_no"] if "ba_qa_doc_no" in sheet.keys() and sheet["ba_qa_doc_no"] else QADocumentRegistry.get_doc("BERITA_ACARA_IMPORT", conn).get("code", "SOP.WH-D.02"))).strip()
 
     if req.berita_acara:
         ba_rec = BeritaAcaraRecord(req.berita_acara)
@@ -1776,6 +1797,9 @@ def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends
         "supplier_code": sup_code, "supplier_name": sup_name,
         "arrival_date": arr_date, "driver_name": drv_name, "truck_plate": trk_plate,
         "current_handler_role": handler_role, "current_handler_name": handler_name,
+        "qa_doc_no": qa_code, "has_berita_acara": bool(has_ba), "ba_qa_doc_no": ba_qa_code,
+        "ba_data_json": ba_json, "ba_container_no": ba_cont, "ba_seal_no": ba_seal,
+        "ba_seal_condition": ba_seal_cond, "ba_container_temp": ba_temp,
         "updated_by": user["id"], "updated_by_name": user["name"], "updated_at": now,
         "finalized_at": now if new_status == "completed" else sheet["finalized_at"],
         "finalized_by": user["id"] if new_status == "completed" else sheet["finalized_by"],
@@ -1956,10 +1980,16 @@ def export_tally_sheet(sheet_id: str):
         except Exception as e:
             print("Notice: could not add logo to tally excel:", e)
 
-    ws["A3"] = "No. Dokumen:"
+    ws["A3"] = "No. Transaksi:"
     ws["A3"].font = meta_bold
     ws["B3"] = sheet["doc_no"]
     ws["B3"].font = meta_font
+
+    qa_code_val = sheet["qa_doc_no"] if ("qa_doc_no" in sheet.keys() and sheet["qa_doc_no"]) else "SOP.WH-D.01"
+    ws["C3"] = "No. Dokumen QA:"
+    ws["C3"].font = meta_bold
+    ws["D3"] = qa_code_val
+    ws["D3"].font = meta_font
 
     ws["E3"] = "Tanggal:"
     ws["E3"].font = meta_bold

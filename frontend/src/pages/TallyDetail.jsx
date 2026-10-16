@@ -330,15 +330,14 @@ export default function TallyDetail() {
             >
               <Printer className="mr-1.5 h-4 w-4" /> PRINT TALLY SHEET
             </Button>
-            {sheet.has_berita_acara && (
-              <Button
-                onClick={() => openBeritaAcaraPrint(sheet.id)}
-                className="bg-blue-700 hover:bg-blue-800 font-semibold text-xs text-white shadow-xs"
-                data-testid="tally-detail-print-ba-button"
-              >
-                <Printer className="mr-1.5 h-4 w-4" /> CETAK BERITA ACARA (BA)
-              </Button>
-            )}
+            <Button
+              onClick={() => openBeritaAcaraPrint(sheet.id)}
+              className={`${sheet.has_berita_acara ? "bg-blue-700 hover:bg-blue-800" : "bg-slate-700 hover:bg-slate-800"} font-semibold text-xs text-white shadow-xs`}
+              data-testid="tally-detail-print-ba-button"
+              title={sheet.has_berita_acara ? "Cetak Berita Acara Penerimaan Barang Import (SOP.WH-D.02)" : "Cetak Berita Acara Import (SOP.WH-D.02)"}
+            >
+              <FileText className="mr-1.5 h-4 w-4" /> CETAK BERITA ACARA (BA)
+            </Button>
             <Button
               onClick={exportX}
               className="bg-emerald-600 hover:bg-emerald-700 font-semibold text-xs"

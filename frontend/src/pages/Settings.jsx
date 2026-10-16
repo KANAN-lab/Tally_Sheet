@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Save, Trash2, ShieldCheck, AlertTriangle, Layers } from "lucide-react";
+import { Plus, Save, Trash2, ShieldCheck, AlertTriangle, Layers, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -69,17 +69,48 @@ export default function Settings() {
     });
   };
 
+  const qaDocs = s.qa_documents || {
+    TALLY_SHEET: {
+      code: "SOP.WH-D.01",
+      title: "FORM TALLY SHEET PENERIMAAN MATERIAL",
+      revision: "01",
+      effective_date: "01 Januari 2024",
+      plant: "PT DIAMOND COLD STORAGE - PLANT 2111 (CIBITUNG)"
+    },
+    BERITA_ACARA_IMPORT: {
+      code: "SOP.WH-D.02",
+      title: "BERITA ACARA PENERIMAAN BARANG IMPORT",
+      revision: "01",
+      effective_date: "01 Januari 2024",
+      plant: "PT DIAMOND COLD STORAGE - PLANT 2111 (CIBITUNG)"
+    }
+  };
+
+  const updateQaDoc = (docKey, field, val) => {
+    setS((prev) => ({
+      ...prev,
+      qa_documents: {
+        ...(prev.qa_documents || qaDocs),
+        [docKey]: {
+          ...((prev.qa_documents && prev.qa_documents[docKey]) || qaDocs[docKey]),
+          [field]: val
+        }
+      }
+    }));
+  };
+
   const save = async () => {
     setBusy(true);
     try {
       const payload = {
         required: s.required,
         duplicate_rule: s.duplicate_rule,
-        hold_categories: s.hold_categories || []
+        hold_categories: s.hold_categories || [],
+        qa_documents: s.qa_documents || qaDocs
       };
       const r = await api.put("/settings", payload);
       setS(r.data);
-      swalAlert("Pengaturan Tersimpan", "Seluruh konfigurasi validasi dan kategori kendala berhasil diperbarui secara dinamis.", "success");
+      swalAlert("Pengaturan Tersimpan", "Seluruh konfigurasi validasi, kategori kendala, dan Nomor Dokumen Resmi QA berhasil diperbarui.", "success");
     } catch (e) {
       toast.error(errMsg(e));
     } finally {
@@ -234,6 +265,139 @@ export default function Settings() {
                 </button>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* STANDAR NOMOR DOKUMEN QA TERKENDALI (ISO 9001:2015 CLAUSE 7.5) */}
+        <div className="lg:col-span-2 rounded-2xl border border-blue-200 bg-white p-5 shadow-sm space-y-5" data-testid="settings-qa-documents-card">
+          <div className="border-b pb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="font-display text-base font-bold text-[#0B2149] flex items-center gap-2">
+                <FileText className="h-5 w-5 text-blue-700" /> Standar Nomor Dokumen QA Terkendali (Zero Hardcode Registry)
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Pendaftaran format nomor dokumen resmi, revisi, dan judul formulir ke Quality Assurance (QA) sesuai audit ISO 9001:2015.
+              </p>
+            </div>
+            <span className="rounded-full bg-blue-100 text-blue-900 text-xs font-bold px-2.5 py-0.5">
+              ISO 9001:2015 Clause 7.5
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Form 1: Tally Sheet */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                <span className="font-bold text-xs text-blue-950 uppercase tracking-wide">
+                  1. Formulir Tally Sheet Penerimaan
+                </span>
+                <span className="font-mono text-[11px] font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                  {qaDocs.TALLY_SHEET?.code || "SOP.WH-D.01"}
+                </span>
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold text-slate-800">Nomor Dokumen Resmi (QA Code) *</Label>
+                <Input
+                  value={qaDocs.TALLY_SHEET?.code || ""}
+                  onChange={(e) => updateQaDoc("TALLY_SHEET", "code", e.target.value.toUpperCase())}
+                  placeholder="Contoh: SOP.WH-D.01"
+                  className="mt-1 font-mono uppercase text-xs"
+                  data-testid="input-qa-tally-code"
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold text-slate-800">Judul Dokumen Resmi</Label>
+                <Input
+                  value={qaDocs.TALLY_SHEET?.title || ""}
+                  onChange={(e) => updateQaDoc("TALLY_SHEET", "title", e.target.value)}
+                  placeholder="FORM TALLY SHEET PENERIMAAN MATERIAL"
+                  className="mt-1 text-xs"
+                  data-testid="input-qa-tally-title"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs font-semibold text-slate-800">No. Revisi</Label>
+                  <Input
+                    value={qaDocs.TALLY_SHEET?.revision || ""}
+                    onChange={(e) => updateQaDoc("TALLY_SHEET", "revision", e.target.value)}
+                    placeholder="01"
+                    className="mt-1 font-mono text-xs"
+                    data-testid="input-qa-tally-rev"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-semibold text-slate-800">Tanggal Berlaku</Label>
+                  <Input
+                    value={qaDocs.TALLY_SHEET?.effective_date || ""}
+                    onChange={(e) => updateQaDoc("TALLY_SHEET", "effective_date", e.target.value)}
+                    placeholder="01 Januari 2024"
+                    className="mt-1 text-xs"
+                    data-testid="input-qa-tally-date"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Form 2: Berita Acara Penerimaan Barang Import */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                <span className="font-bold text-xs text-blue-950 uppercase tracking-wide">
+                  2. Formulir Berita Acara Penerimaan Barang Import
+                </span>
+                <span className="font-mono text-[11px] font-bold text-purple-800 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                  {qaDocs.BERITA_ACARA_IMPORT?.code || "SOP.WH-D.02"}
+                </span>
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold text-slate-800">Nomor Dokumen Resmi (QA Code) *</Label>
+                <Input
+                  value={qaDocs.BERITA_ACARA_IMPORT?.code || ""}
+                  onChange={(e) => updateQaDoc("BERITA_ACARA_IMPORT", "code", e.target.value.toUpperCase())}
+                  placeholder="Contoh: SOP.WH-D.02"
+                  className="mt-1 font-mono uppercase text-xs"
+                  data-testid="input-qa-ba-code"
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold text-slate-800">Judul Dokumen Resmi</Label>
+                <Input
+                  value={qaDocs.BERITA_ACARA_IMPORT?.title || ""}
+                  onChange={(e) => updateQaDoc("BERITA_ACARA_IMPORT", "title", e.target.value)}
+                  placeholder="BERITA ACARA PENERIMAAN BARANG IMPORT"
+                  className="mt-1 text-xs"
+                  data-testid="input-qa-ba-title"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs font-semibold text-slate-800">No. Revisi</Label>
+                  <Input
+                    value={qaDocs.BERITA_ACARA_IMPORT?.revision || ""}
+                    onChange={(e) => updateQaDoc("BERITA_ACARA_IMPORT", "revision", e.target.value)}
+                    placeholder="01"
+                    className="mt-1 font-mono text-xs"
+                    data-testid="input-qa-ba-rev"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-semibold text-slate-800">Tanggal Berlaku</Label>
+                  <Input
+                    value={qaDocs.BERITA_ACARA_IMPORT?.effective_date || ""}
+                    onChange={(e) => updateQaDoc("BERITA_ACARA_IMPORT", "effective_date", e.target.value)}
+                    placeholder="01 Januari 2024"
+                    className="mt-1 text-xs"
+                    data-testid="input-qa-ba-date"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

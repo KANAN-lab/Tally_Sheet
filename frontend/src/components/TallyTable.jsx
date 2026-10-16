@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, Eye, FileSpreadsheet, Pencil, Printer, Trash2 } from "lucide-react";
+import { AlertTriangle, Eye, FileSpreadsheet, FileText, Pencil, Printer, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import StatusBadge from "@/components/StatusBadge";
 import CancelDialog from "@/components/CancelDialog";
 import { useAuth } from "@/context/AuthContext";
 import { downloadExcel, errMsg } from "@/lib/api";
-import { canCancel, canEdit, fmtDateTime, openPrint } from "@/lib/format";
+import { canCancel, canEdit, fmtDateTime, openPrint, openBeritaAcaraPrint } from "@/lib/format";
 
 function IconBtn({ onClick, title, children, testId, danger }) {
   return (
@@ -103,6 +103,15 @@ export default function TallyTable({ items, startIndex = 0, onChanged, extended,
               >
                 <Eye className="h-3.5 w-3.5" /> Detail
               </button>
+              <button
+                type="button"
+                onClick={() => openBeritaAcaraPrint(s.id)}
+                className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                title="Cetak Berita Acara (BA)"
+                data-testid={`${testId}-print-ba-mobile-${s.doc_no}`}
+              >
+                <FileText className="h-3.5 w-3.5" /> Cetak BA
+              </button>
               {canEdit(s, user) && (
                 <button
                   type="button"
@@ -196,8 +205,17 @@ export default function TallyTable({ items, startIndex = 0, onChanged, extended,
                       </IconBtn>
                     )}
                     {extended && (
-                      <IconBtn title="Print" onClick={() => openPrint(s.id)} testId={`${testId}-print-${s.doc_no}`}>
+                      <IconBtn title="Print Tally Sheet" onClick={() => openPrint(s.id)} testId={`${testId}-print-${s.doc_no}`}>
                         <Printer className="h-4 w-4" />
+                      </IconBtn>
+                    )}
+                    {extended && (
+                      <IconBtn
+                        title="Cetak Berita Acara (BA)"
+                        onClick={() => openBeritaAcaraPrint(s.id)}
+                        testId={`${testId}-print-ba-${s.doc_no}`}
+                      >
+                        <FileText className={`h-4 w-4 ${s.has_berita_acara ? "text-blue-700" : "text-slate-400 hover:text-blue-700"}`} />
                       </IconBtn>
                     )}
                     {extended && (

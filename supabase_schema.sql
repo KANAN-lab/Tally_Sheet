@@ -23,10 +23,12 @@ CREATE TABLE IF NOT EXISTS public.settings (
     required_json TEXT NOT NULL,
     duplicate_rule TEXT NOT NULL,
     hold_categories_json TEXT DEFAULT '[]',
+    qa_documents_json TEXT DEFAULT '{}',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
     updated_by_name TEXT NOT NULL
 );
 ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS hold_categories_json TEXT DEFAULT '[]';
+ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS qa_documents_json TEXT DEFAULT '{}';
 
 -- 3. MASTER VERSIONS TABLE
 CREATE TABLE IF NOT EXISTS public.master_versions (
@@ -100,7 +102,15 @@ CREATE TABLE IF NOT EXISTS public.tally_sheets (
     gr_by_name TEXT DEFAULT '',
     gr_by_id TEXT DEFAULT '',
     gr_at TIMESTAMPTZ,
-    gr_notes TEXT DEFAULT ''
+    gr_notes TEXT DEFAULT '',
+    qa_doc_no TEXT DEFAULT 'SOP.WH-D.01',
+    has_berita_acara BOOLEAN DEFAULT FALSE,
+    ba_qa_doc_no TEXT DEFAULT 'SOP.WH-D.02',
+    ba_data_json TEXT DEFAULT '{}',
+    ba_container_no TEXT DEFAULT '',
+    ba_seal_no TEXT DEFAULT '',
+    ba_seal_condition TEXT DEFAULT '',
+    ba_container_temp TEXT DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_tally_sheets_doc_no ON public.tally_sheets(doc_no);
 CREATE INDEX IF NOT EXISTS idx_tally_sheets_status ON public.tally_sheets(status);
@@ -130,6 +140,17 @@ ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS gr_by_name TEXT DEFAULT
 ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS gr_by_id TEXT DEFAULT '';
 ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS gr_at TIMESTAMPTZ;
 ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS gr_notes TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS qa_doc_no TEXT DEFAULT 'SOP.WH-D.01';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS has_berita_acara BOOLEAN DEFAULT FALSE;
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS ba_qa_doc_no TEXT DEFAULT 'SOP.WH-D.02';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS ba_data_json TEXT DEFAULT '{}';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS ba_container_no TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS ba_seal_no TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS ba_seal_condition TEXT DEFAULT '';
+ALTER TABLE public.tally_sheets ADD COLUMN IF NOT EXISTS ba_container_temp TEXT DEFAULT '';
+
+CREATE INDEX IF NOT EXISTS idx_tally_sheets_has_ba ON public.tally_sheets(has_berita_acara);
+CREATE INDEX IF NOT EXISTS idx_tally_sheets_ba_container ON public.tally_sheets(ba_container_no);
 
 -- 6. TALLY ITEMS TABLE
 CREATE TABLE IF NOT EXISTS public.tally_items (
