@@ -1868,6 +1868,11 @@ def get_tally_sheet(sheet_id: str):
     
     actual_id = sheet["id"]
     items = conn.execute("SELECT * FROM tally_items WHERE sheet_id = ? ORDER BY seq ASC", (actual_id,)).fetchall()
+
+    qa_code_val = QADocumentRegistry.resolve_tally_code(sheet["qa_doc_no"] if "qa_doc_no" in sheet.keys() else None, conn)
+    ba_qa_code_val = QADocumentRegistry.resolve_ba_code(sheet["ba_qa_doc_no"] if "ba_qa_doc_no" in sheet.keys() else None, conn)
+    qa_meta_val = QADocumentRegistry.get_doc(QADocumentRegistry.KEY_TALLY, conn)
+    ba_qa_meta_val = QADocumentRegistry.get_doc(QADocumentRegistry.KEY_BERITA_ACARA, conn)
     conn.close()
 
     item_list = []
@@ -1929,11 +1934,11 @@ def get_tally_sheet(sheet_id: str):
         "cancelled_by": sheet["cancelled_by"],
         "cancelled_by_name": sheet["cancelled_by_name"],
         "cancel_reason": sheet["cancel_reason"],
-        "qa_doc_no": QADocumentRegistry.resolve_tally_code(sheet["qa_doc_no"] if "qa_doc_no" in sheet.keys() else None, conn),
+        "qa_doc_no": qa_code_val,
         "has_berita_acara": bool(sheet["has_berita_acara"]) if "has_berita_acara" in sheet.keys() else False,
-        "ba_qa_doc_no": QADocumentRegistry.resolve_ba_code(sheet["ba_qa_doc_no"] if "ba_qa_doc_no" in sheet.keys() else None, conn),
-        "qa_meta": QADocumentRegistry.get_doc(QADocumentRegistry.KEY_TALLY, conn),
-        "ba_qa_meta": QADocumentRegistry.get_doc(QADocumentRegistry.KEY_BERITA_ACARA, conn),
+        "ba_qa_doc_no": ba_qa_code_val,
+        "qa_meta": qa_meta_val,
+        "ba_qa_meta": ba_qa_meta_val,
         "ba_container_no": sheet["ba_container_no"] if "ba_container_no" in sheet.keys() else "",
         "ba_seal_no": sheet["ba_seal_no"] if "ba_seal_no" in sheet.keys() else "",
         "ba_seal_condition": sheet["ba_seal_condition"] if "ba_seal_condition" in sheet.keys() else "",
