@@ -9,11 +9,12 @@ Dokumen ini melacak status pengerjaan fitur, perbaikan bug, arsitektur sistem, d
 | Kategori | Selesai | Dalam Proses / Pending | Total Item |
 | :--- | :---: | :---: | :---: |
 | **Alur Kerja & Bisnis Proses (Workflow)** | 6 | 0 | 6 |
-| **UI/UX & Wizard Editor** | 6 | 0 | 6 |
-| **Integrasi & Sinkronisasi Data** | 4 | 0 | 4 |
+| **UI/UX & Wizard Editor** | 7 | 0 | 7 |
+| **Standar Dokumen QA & Berita Acara** | 4 | 0 | 4 |
+| **Integrasi, Cloud Parity & Sinkronisasi Data** | 6 | 0 | 6 |
 | **Manajemen Pengguna & Hak Akses** | 3 | 0 | 3 |
 | **Tindakan User & Pengujian Live** | 0 | 2 | 2 |
-| **Pengembangan Lanjutan (Opsional)** | 0 | 3 | 3 |
+| **Pengembangan Lanjutan (Backlog / Opsional)** | 1 | 2 | 3 |
 
 ---
 
@@ -30,7 +31,7 @@ Dokumen ini melacak status pengerjaan fitur, perbaikan bug, arsitektur sistem, d
 
 ### B. UI/UX & Form Wizard
 - [x] **Tally Editor Multi-Step Wizard**:
-  - **Langkah 1**: Informasi Dokumen & Surat Jalan (Nomor SJ, Nomor PO SAP, Tanggal Kedatangan, No. Polisi Truk).
+  - **Langkah 1**: Informasi Dokumen & Surat Jalan (Nomor SJ, Nomor PO SAP, Tanggal Kedatangan, No. Polisi Truk, Container ISO, Berita Acara).
   - **Langkah 2**: Input Item Material & Cek Fisik (Batch, Exp Date, Prod Date, Qty, UOM, Supplier).
   - **Langkah 3**: Review & Finalisasi / Simpan Draft / Kirim ke Admin.
 - [x] **Pembersihan Header**:
@@ -43,35 +44,60 @@ Dokumen ini melacak status pengerjaan fitur, perbaikan bug, arsitektur sistem, d
   - Menggantikan prompt native browser dengan modal pop-up SweetAlert2 bergaya Manrope/Slate untuk konfirmasi aksi dan input alasan penahanan/reject.
 - [x] **Lazy Loading Skeleton**:
   - Komponen `Skeleton`, `TableSkeleton`, dan `DetailSkeleton` diimplementasikan pada Dashboard, Daftar Tally, dan Detail Dokumen untuk pengalaman navigasi yang mulus tanpa kedip layout.
-- [x] **Template Cetak A4 (Print Tally Sheet)**:
-  - Menampilkan Nomor Surat Jalan (SJ), Nomor PO SAP, Nomor Polisi Armada Truk, status "SELESAI (STOCK TER-UU)", serta 3 kolom tanda tangan peran: *Checker (Pembuat)*, *Admin Warehouse (Verifikasi)*, dan *Quality Control (Disetujui / Stock UU)*.
 - [x] **Perbaikan Seleksi Dropdown Kode Material**:
   - Memperbaiki signature pemanggilan `update(i, patch)` pada komponen `TallyRow` serta menambahkan defensive null check pada `Object.keys()` sehingga pemilihan item dari dropdown `MaterialSearch` dan `SupplierSearch` berjalan lancar tanpa error `TypeError: Cannot convert undefined or null to object`.
-- [x] **Perbaikan Alur Transisi & Sinkronisasi Supabase (Fix Status Balik Menunggu Admin WH)**:
-  - Mengubah metode sinkronisasi transisi update ke Supabase menjadi `PATCH /rest/v1/tally_sheets` (sebelumnya `POST` yang memicu constraint violation `created_by cannot be null` sehingga status di Supabase membeku dan memutar balik status ke draf/admin saat re-sync serverless).
-  - Menerapkan validasi state machine ketat di `backend/domain.py` pada setiap aksi transisi agar dokumen tidak dapat diproses berkali-kali atau melompati tahapan.
-  - Memperketat `canEdit` di frontend agar dokumen yang sedang berjalan di QC atau sudah Selesai tidak dapat diakses di editor.
 - [x] **Optimasi Layout Grid & Responsivitas Layar Mobile**:
   - Menghapus paksaan `min-w-[1280px]` pada layar kecil di Tally Editor; tabel otomatis menjadi mode Card terstruktur pada mobile (`< lg`) dan tabel lebar pada desktop.
   - Menambahkan tampilan responsif Mobile Cards pada `TallyDetail.jsx` dan `TallyTable.jsx` (Dashboard & Daftar Tally) sehingga data item material mudah dibaca di layar HP tanpa harus scroll horizontal 1000px.
 
-### C. Arsitektur OOP & Zero Hardcoding
+### C. Arsitektur OOP & Konfigurasi Dinamis (Dynamic Configuration)
 - [x] **Backend Domain Service**:
-  - Kelas OOP `WorkflowManager` (`backend/domain.py`) mengontrol validasi transisi antar status, hak akses role, dan pembatasan alur.
-  - Kelas OOP `SettingsService` (`backend/domain.py`) mengelola konfigurasi sistem, validasi dilarang simpan ganda, dan kategori penahanan dinamis.
+  - Kelas OOP `WorkflowManager` ([`domain.py`](file:///d:/2.%20FILE%20MEETING/Dashboard/Tally%20Sheet/backend/domain.py)) mengontrol validasi transisi antar status, hak akses role, dan pembatasan alur.
+  - Kelas OOP `SettingsService` ([`domain.py`](file:///d:/2.%20FILE%20MEETING/Dashboard/Tally%20Sheet/backend/domain.py)) mengelola konfigurasi sistem, validasi pencegahan duplikasi, nomor dokumen kontrol QA, dan kategori penahanan dinamis.
 - [x] **Frontend Workflow Service**:
-  - Kelas OOP `WorkflowService` (`frontend/src/services/WorkflowService.js`) menangani mapping status, penanda langkah stepper, otorisasi aksi tombol berdasarkan peran pengguna yang sedang login.
-- [x] **Dynamic Hold Categories (Zero Hardcode)**:
+  - Kelas OOP `WorkflowService` ([`WorkflowService.js`](file:///d:/2.%20FILE%20MEETING/Dashboard/Tally%20Sheet/frontend/src/services/WorkflowService.js)) menangani mapping status, penanda langkah stepper, otorisasi aksi tombol berdasarkan peran pengguna yang sedang login.
+- [x] **Dynamic Hold Categories & Master Registry**:
   - Kategori alasan pending (seperti *Dokumen Belum Lengkap*, *Kuantitas Selisih*, *Kualitas Kemasan Rusak*, dll.) dapat ditambah, dihapus, dan dikelola langsung melalui halaman *Pengaturan Administrator* tanpa mengubah source code.
 
-### D. Manajemen Data & Akun Awal (Demo Accounts)
+### D. Standar Dokumen QA & Berita Acara (BA) Kedatangan Material
+- [x] **Nomor Dokumen Resmi QA Terkontrol (Dynamic Master Registry)**:
+  - Penomoran dokumen resmi QA terkontrol (misal: `SOP.WH-D.01` untuk Tally Sheet dan `SOP.WH-D.02` untuk Berita Acara) dikelola secara dinamis di halaman Pengaturan Administrator (`qa_tally_doc_no`, `qa_ba_doc_no`) dan tersimpan di database, bukan hardcoded.
+  - Nomor dokumen resmi QA ditampilkan secara otomatis pada header cetak Tally Sheet, Berita Acara, dan lembar export audit.
+- [x] **Mekanisme Berita Acara (BA) Fleksibel**:
+  - Ditambahkan opsi toggle switch *"Perlu Berita Acara (BA) Ketidaksesuaian/Catatan Lapangan?"* pada Langkah 1 Tally Editor.
+  - Membuka form kondisional untuk nomor BA, tanggal BA, dan rincian catatan deviasi fisik (barang basah, kemasan bocor, segel rusak, selisih kuantiti) hanya jika ada kejadian khusus di lapangan.
+- [x] **Mandatory Nopol & Auto-Format Container ISO 6346**:
+  - Field No. Polisi armada ditetapkan sebagai field wajib (`required / mandatory`).
+  - Input No. Container menerapkan format standar internasional **ISO 6346** secara real-time (`AAAA 123456-7`: 4 huruf kode pemilik/tipe, 6 angka seri, 1 angka check digit).
+- [x] **Fitur Cetak Berita Acara Resmi**:
+  - Tombol aksi *"Cetak BA"* ditambahkan pada tabel daftar dokumen (`TallyTable.jsx`), kartu mobile, dan header dokumen detail (`TallyDetail.jsx`).
+  - Tampilan cetak A4 Berita Acara khusus ([`TallyPrint.jsx`](file:///d:/2.%20FILE%20MEETING/Dashboard/Tally%20Sheet/frontend/src/pages/TallyPrint.jsx)) lengkap dengan kop dokumen QA (`SOP.WH-D.02`), data armada, rincian kronologi, tabel barang terdampak, dan 3 kolom tanda tangan resmi (Checker, Driver/Ekspedisi, dan Ka. Gudang / QC).
+
+### E. Integrasi, Cloud Parity & Sinkronisasi Supabase
+- [x] **Sinkronisasi Riwayat Status & Audit Trail ke Supabase**:
+  - Memperbaiki sinkronisasi riwayat audit status (`tally_history`) ke Supabase Cloud sehingga log jejak status (Checker, Admin Warehouse, QC) tetap tersimpan utuh dan tidak hilang menjadi 0 catatan saat instance serverless Vercel mengalami cold start.
+  - Endpoint `GET /api/tallies/{id}/history` memprioritaskan pengambilan data dari tabel `tally_history` di Supabase Cloud PostgreSQL.
+- [x] **Persistensi Pengaturan Administrator ke Supabase**:
+  - Endpoint `GET /api/settings` dan `PUT /api/settings` tersinkronisasi dua arah ke tabel `settings` di Supabase. Perubahan nomor dokumen QA, kategori hold, dan konfigurasi lainnya tersimpan permanen di cloud database.
+- [x] **Pembaruan Skema SQL Supabase (`supabase_schema.sql`)**:
+  - Skema [`supabase_schema.sql`](file:///d:/2.%20FILE%20MEETING/Dashboard/Tally%20Sheet/supabase_schema.sql) telah diperbarui secara menyeluruh mencakup:
+    - Tabel `suppliers` lengkap (`purchasing_org`, `active`, `updated_at`).
+    - Kolom `qa_tally_doc_no` dan `qa_ba_doc_no` pada tabel `settings`.
+    - RLS Policies dengan klausul `WITH CHECK (true)` untuk operasi `INSERT` dan `UPDATE` guna mencegah penolakan permission.
+    - Default seed data untuk akun pengguna, pengaturan sistem, dan master data awal.
+- [x] **Perbaikan Transisi Status Supabase**:
+  - Sinkronisasi transisi status menggunakan `PATCH /rest/v1/tally_sheets` untuk menjaga integritas data tanpa memicu pelanggaran constraint foreign key atau memutar balik status dokumen.
+- [x] **Sinkronisasi Cache Serverless**:
+  - Kolom header lengkap (`delivery_note_no`, `po_no`, `arrival_date`, `truck_plate`, `container_no`, `has_ba`, `ba_no`, `ba_date`, `ba_notes`, `current_handler_role`, dll.) tersinkronisasi otomatis saat inisialisasi serverless.
+
+### F. Manajemen Pengguna & Hak Akses
 - [x] **4 Akun Demo Bawaan Sistem**:
   - **Checker**: `checker@tally.com` (Password: `Admin123!`)
   - **Admin Warehouse**: `warehouse@tally.com` (Password: `Admin123!`)
   - **Quality Control**: `qc@tally.com` (Password: `Admin123!`)
   - **Super Administrator**: `admin@tally.com` (Password: `Admin123!`)
-- [x] **Perbaikan Bug Serverless Supabase Sync**:
-  - Menyelesaikan masalah *"Tally Tidak Ditemukan"* dan kolom header kosong pada Vercel dengan menyinkronkan seluruh kolom (`delivery_note_no`, `po_no`, `arrival_date`, `truck_plate`, `current_handler_role`, `qc_status`, dll.) dari Supabase PostgreSQL ke cache instance lokal.
+- [x] **Role-Based Access Control (RBAC)**:
+  - Otorisasi tombol aksi dan izin edit sesuai role yang sedang aktif. Dokumen yang telah masuk tahap verifikasi atau berstatus selesai terkunci otomatis dari modifikasi sembarangan.
 
 ---
 
@@ -79,8 +105,8 @@ Dokumen ini melacak status pengerjaan fitur, perbaikan bug, arsitektur sistem, d
 
 | No | Tindakan | Penanggung Jawab | Keterangan |
 | :---: | :--- | :---: | :--- |
-| **1** | **Jalankan SQL Migration di Supabase Cloud** | **User / Admin DB** | File [`supabase_schema.sql`](file:///d:/2.%20FILE%20MEETING/Dashboard/Tally%20Sheet/supabase_schema.sql) telah diperbarui dengan kolom `hold_categories_json` dan data seed 4 akun pengguna baru. Silakan buka **Supabase Dashboard → SQL Editor** dan jalankan query tersebut untuk memastikan skema Cloud PostgreSQL sinkron 100%. |
-| **2** | **Uji Coba Alur Penuh (End-to-End Live Testing)** | **Tim QA / User** | Login di [tally-incoming.vercel.app](https://tally-incoming.vercel.app/) menggunakan akun `checker@tally.com`, buat 1 Tally Sheet baru hingga tahap Review, kirim ke Admin Warehouse, login sebagai `warehouse@tally.com` untuk verifikasi, dan selesaikan dengan akun `qc@tally.com` hingga dokumen berstatus *"Selesai (Stock Ter-UU)"*. |
+| **1** | **Jalankan SQL Migration di Supabase Cloud** | **User / Admin DB** | File [`supabase_schema.sql`](file:///d:/2.%20FILE%20MEETING/Dashboard/Tally%20Sheet/supabase_schema.sql) telah diperbarui dengan skema tabel `suppliers`, kolom QA document registry, dan RLS policies baru. Buka **Supabase Dashboard → SQL Editor**, paste isi file [`supabase_schema.sql`](file:///d:/2.%20FILE%20MEETING/Dashboard/Tally%20Sheet/supabase_schema.sql), dan klik **Run**. |
+| **2** | **Uji Coba Alur Penuh & Cetak Dokumen** | **Tim QA / User** | Uji coba alur di [tally-incoming.vercel.app](https://tally-incoming.vercel.app/): Buat draf Tally Sheet baru dengan Nopol & opsi Berita Acara, uji auto-format No. Container ISO, verifikasi hingga status *"Stock Ter-UU"*, lalu uji cetak lembar Tally Sheet (`SOP.WH-D.01`) dan Berita Acara (`SOP.WH-D.02`). |
 
 ---
 
