@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
+  AlertCircle,
   AlertTriangle,
   Award,
+  Building2,
   Calendar,
   CheckCircle2,
   Clock,
@@ -10,11 +12,14 @@ import {
   FileCheck,
   FileSpreadsheet,
   Filter,
+  Hourglass,
   Layers,
   Printer,
   RefreshCw,
   Search,
+  ShieldAlert,
   ShieldCheck,
+  Tag,
   Truck,
   X
 } from "lucide-react";
@@ -29,6 +34,7 @@ import { api, downloadReportExcel, errMsg } from "@/lib/api";
 const LIMIT = 20;
 
 export default function Reports() {
+  const [activeTab, setActiveTab] = useState("traceability");
   const [filters, setFilters] = useState({
     start_date: "",
     end_date: "",
@@ -58,7 +64,10 @@ export default function Reports() {
       first_pass_yield: 100
     },
     items: [],
-    total: 0
+    total: 0,
+    vendor_performance: [],
+    non_conformance: [],
+    shelf_life: []
   });
 
   const loadData = useCallback(() => {
@@ -95,7 +104,6 @@ export default function Reports() {
     setPage(1);
   };
 
-  // Quick preset shortcuts
   const applyPreset = (preset) => {
     const today = new Date();
     const yyyy = today.getFullYear();
@@ -134,7 +142,7 @@ export default function Reports() {
   const handleExportExcel = async () => {
     try {
       setExporting(true);
-      toast.info("Sedang menyusun file Excel Laporan Audit ISO...");
+      toast.info("Sedang menyusun file Excel Laporan Audit ISO multi-sheet...");
       const filename = await downloadReportExcel({
         start_date: applied.start_date,
         end_date: applied.end_date,
@@ -151,13 +159,16 @@ export default function Reports() {
   };
 
   const kpi = data.kpi || {};
+  const vendorList = data.vendor_performance || [];
+  const ncrList = data.non_conformance || [];
+  const shelfLifeList = data.shelf_life || [];
 
   return (
     <div className="space-y-6" data-testid="reports-page">
       {/* Header */}
       <PageHeader
         title="Laporan & Rekapitulasi Audit (ISO 9001:2015 / GMP)"
-        subtitle="Dokumen resmi ketertelusuran penerimaan material incoming, verifikasi fisik, status rilis mutu QC, serta log ketidaksesuaian."
+        subtitle="Dokumen resmi ketertelusuran penerimaan material incoming, evaluasi vendor, status rilis mutu QC, serta log ketidaksesuaian."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -187,7 +198,7 @@ export default function Reports() {
           <div>
             <div className="font-bold text-[#0B2149] text-sm">Standar Dokumen Kontrol Mutu — FORM-WHS-ISO-008 Rev. 02</div>
             <div className="text-slate-600 mt-0.5">
-              Klausul ISO 9001:2015 8.4 (Pengendalian Proses Eksternal) & 8.6 (Pelepasan Produk/Jasa). Data dilengkapi audit trail lengkap dan siap digunakan untuk audit internal maupun eksternal.
+              Memenuhi Klausul ISO 9001:2015 8.4 (Evaluasi Pemasok Eksternal), 8.6 (Pelepasan Produk Ter-UU), 8.7 (Pengendalian Deviasi/Hold), serta ISO 22000/GMP (Traceability).
             </div>
           </div>
         </div>
@@ -301,7 +312,6 @@ export default function Reports() {
 
         {/* Detailed Filter Inputs */}
         <form onSubmit={handleApply} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-          {/* Tanggal Awal */}
           <div>
             <label className="text-[11px] font-semibold text-slate-600 block mb-1">Dari Tanggal</label>
             <Input
@@ -312,7 +322,6 @@ export default function Reports() {
             />
           </div>
 
-          {/* Tanggal Akhir */}
           <div>
             <label className="text-[11px] font-semibold text-slate-600 block mb-1">Sampai Tanggal</label>
             <Input
@@ -323,7 +332,6 @@ export default function Reports() {
             />
           </div>
 
-          {/* Status Mutu */}
           <div>
             <label className="text-[11px] font-semibold text-slate-600 block mb-1">Status Mutu / Alur</label>
             <Select
@@ -345,7 +353,6 @@ export default function Reports() {
             </Select>
           </div>
 
-          {/* Keyword Search */}
           <div className="lg:col-span-2">
             <label className="text-[11px] font-semibold text-slate-600 block mb-1">Pencarian No. SJ / PO / Plat / Material</label>
             <div className="relative">
@@ -359,7 +366,6 @@ export default function Reports() {
             </div>
           </div>
 
-          {/* Action Buttons */}
           <div className="sm:col-span-2 lg:col-span-5 flex items-center justify-end gap-2 pt-1">
             <Button
               type="button"
@@ -379,178 +385,468 @@ export default function Reports() {
         </form>
       </div>
 
-      {/* Live Preview Table Card */}
-      <div className="rounded-xl border bg-white shadow-sm overflow-hidden" data-testid="reports-preview-card">
-        <div className="border-b border-slate-100 bg-slate-50/70 px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <div>
-            <h3 className="text-sm font-bold text-slate-800">
-              Pratinjau Data Ketertelusuran Material ({data.total} Baris Ditemukan)
-            </h3>
-            <p className="text-xs text-slate-500">
-              Menampilkan data log incoming sesuai kriteria filter yang aktif saat ini.
-            </p>
-          </div>
-          <span className="text-xs text-slate-600 font-mono">
-            Hal {page} dari {Math.max(1, Math.ceil(data.total / LIMIT))}
-          </span>
-        </div>
+      {/* ISO Report Navigation Tabs */}
+      <div className="border-b border-slate-200">
+        <nav className="flex space-x-2 sm:space-x-6 overflow-x-auto text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => setActiveTab("traceability")}
+            className={`pb-3 px-1 border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
+              activeTab === "traceability"
+                ? "border-blue-700 text-blue-900 font-bold"
+                : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
+            }`}
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            1. Rekap Ketertelusuran Material
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600">
+              {data.total}
+            </span>
+          </button>
 
+          <button
+            type="button"
+            onClick={() => setActiveTab("vendor")}
+            className={`pb-3 px-1 border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
+              activeTab === "vendor"
+                ? "border-blue-700 text-blue-900 font-bold"
+                : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
+            }`}
+          >
+            <Building2 className="h-4 w-4" />
+            2. Evaluasi Kinerja Vendor (ISO 8.4)
+            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] text-blue-800 font-bold">
+              {vendorList.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("ncr")}
+            className={`pb-3 px-1 border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
+              activeTab === "ncr"
+                ? "border-blue-700 text-blue-900 font-bold"
+                : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
+            }`}
+          >
+            <ShieldAlert className="h-4 w-4 text-amber-600" />
+            3. Log Ketidaksesuaian &amp; Hold (ISO 8.7)
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+              ncrList.length > 0 ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600"
+            }`}>
+              {ncrList.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("shelf_life")}
+            className={`pb-3 px-1 border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
+              activeTab === "shelf_life"
+                ? "border-blue-700 text-blue-900 font-bold"
+                : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
+            }`}
+          >
+            <Hourglass className="h-4 w-4 text-emerald-600" />
+            4. Monitoring Umur Simpan (FEFO / GMP)
+            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] text-emerald-800 font-bold">
+              {shelfLifeList.length}
+            </span>
+          </button>
+        </nav>
+      </div>
+
+      {/* Tab Content Display */}
+      <div className="rounded-xl border bg-white shadow-sm overflow-hidden" data-testid="reports-content-card">
         {loading ? (
           <div className="p-5">
             <TableSkeleton rows={8} cols={7} />
           </div>
-        ) : data.items.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 space-y-2">
-            <FileCheck className="h-10 w-10 text-slate-300 mx-auto" />
-            <div className="text-sm font-semibold text-slate-700">Tidak ada data penerimaan yang cocok</div>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              Coba sesuaikan rentang tanggal atau bersihkan kata kunci pencarian untuk melihat data lainnya.
-            </p>
-          </div>
         ) : (
           <>
-            {/* Desktop Table View */}
-            <div className="hidden lg:block overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-[#0B2149] text-white font-semibold">
-                  <tr>
-                    <th className="py-3 px-3 w-10 text-center">No</th>
-                    <th className="py-3 px-3">Tgl Datang</th>
-                    <th className="py-3 px-3">No. Tally</th>
-                    <th className="py-3 px-3">Surat Jalan / PO</th>
-                    <th className="py-3 px-3">Armada Truk</th>
-                    <th className="py-3 px-3">Material &amp; Batch</th>
-                    <th className="py-3 px-3">Vendor / Supplier</th>
-                    <th className="py-3 px-3 text-right">Kuantitas</th>
-                    <th className="py-3 px-3 text-center">Status Mutu</th>
-                    <th className="py-3 px-3">Aktor Verifikasi</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-slate-700">
-                  {data.items.map((it, idx) => {
-                    const rowNo = (page - 1) * LIMIT + idx + 1;
-                    const isCompleted = it.status === "completed";
-                    const isHold = it.status.includes("hold");
-
-                    return (
-                      <tr key={it.id || idx} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3 px-3 text-center font-mono text-slate-500">{rowNo}</td>
-                        <td className="py-3 px-3 font-mono text-slate-800 whitespace-nowrap">
-                          {it.arrival_date || "-"}
-                        </td>
-                        <td className="py-3 px-3 font-mono font-semibold text-blue-900 whitespace-nowrap">
-                          {it.doc_no}
-                        </td>
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          <div className="font-semibold text-slate-900">{it.delivery_note_no || "-"}</div>
-                          <div className="text-[11px] text-slate-500 font-mono">PO: {it.po_no || "-"}</div>
-                        </td>
-                        <td className="py-3 px-3 whitespace-nowrap font-mono font-semibold text-slate-800">
-                          {it.truck_plate || "-"}
-                        </td>
-                        <td className="py-3 px-3 min-w-[200px]">
-                          <div className="font-semibold text-slate-900">{it.material_name}</div>
-                          <div className="text-[11px] text-slate-500 font-mono">
-                            Kode: {it.material_code} | Batch: <span className="text-slate-800 font-semibold">{it.batch_fisik || "-"}</span>
-                          </div>
-                        </td>
-                        <td className="py-3 px-3 max-w-[160px] truncate" title={it.supplier_name}>
-                          <div className="font-medium text-slate-800">{it.supplier_name || "-"}</div>
-                          {it.supplier_code && <div className="text-[10px] text-slate-400 font-mono">{it.supplier_code}</div>}
-                        </td>
-                        <td className="py-3 px-3 text-right whitespace-nowrap font-mono font-semibold text-slate-900">
-                          {Number(it.qty || 0).toLocaleString("id-ID")} {it.uom}
-                        </td>
-                        <td className="py-3 px-3 text-center whitespace-nowrap">
-                          <span
-                            className={`inline-block px-2.5 py-0.5 rounded text-[11px] font-bold tracking-tight border ${
-                              isCompleted
-                                ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                                : isHold
-                                ? "bg-amber-50 text-amber-900 border-amber-300"
-                                : "bg-blue-50 text-blue-800 border-blue-200"
-                            }`}
-                          >
-                            {isCompleted
-                              ? "STOCK TER-UU"
-                              : isHold
-                              ? (it.pending_category || "HOLD")
-                              : it.status.replace("_", " ").toUpperCase()}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 text-[11px] text-slate-600 whitespace-nowrap">
-                          <div>Checker: <strong className="text-slate-800">{it.pic_name || it.created_by_name || "-"}</strong></div>
-                          {it.qc_by_name && (
-                            <div className="text-emerald-700 font-medium">QC: {it.qc_by_name}</div>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile Card List View */}
-            <div className="lg:hidden divide-y divide-slate-100">
-              {data.items.map((it, idx) => {
-                const rowNo = (page - 1) * LIMIT + idx + 1;
-                const isCompleted = it.status === "completed";
-                const isHold = it.status.includes("hold");
-
-                return (
-                  <div key={it.id || idx} className="p-4 space-y-2.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <span className="text-[11px] font-mono text-slate-400 mr-2">#{rowNo}</span>
-                        <span className="font-mono font-bold text-blue-900 text-xs">{it.doc_no}</span>
-                        <div className="text-xs font-semibold text-slate-900 mt-0.5">{it.material_name}</div>
-                      </div>
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border shrink-0 ${
-                          isCompleted
-                            ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                            : isHold
-                            ? "bg-amber-50 text-amber-900 border-amber-300"
-                            : "bg-blue-50 text-blue-800 border-blue-200"
-                        }`}
-                      >
-                        {isCompleted ? "Stock Ter-UU" : isHold ? "Hold" : it.status}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                      <div>
-                        <span className="text-slate-500">Surat Jalan:</span>{" "}
-                        <strong className="text-slate-800">{it.delivery_note_no || "-"}</strong>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Armada Truk:</span>{" "}
-                        <strong className="font-mono text-slate-800">{it.truck_plate || "-"}</strong>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Batch Fisik:</span>{" "}
-                        <strong className="font-mono text-slate-800">{it.batch_fisik || "-"}</strong>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Kuantitas:</span>{" "}
-                        <strong className="text-slate-900">{Number(it.qty || 0).toLocaleString("id-ID")} {it.uom}</strong>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
-                      <div>Tgl: <strong className="text-slate-700 font-mono">{it.arrival_date || "-"}</strong></div>
-                      <div>Checker: <strong className="text-slate-700">{it.pic_name || it.created_by_name || "-"}</strong></div>
-                    </div>
+            {/* ================= TAB 1: REKAP KETERTELUSURAN ================= */}
+            {activeTab === "traceability" && (
+              <>
+                <div className="border-b border-slate-100 bg-slate-50/70 px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800">
+                      Pratinjau Data Ketertelusuran Material ({data.total} Baris Ditemukan)
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Log lengkap kedatangan fisik, PO SAP, batch supplier, dan tanggal rilis QC.
+                    </p>
                   </div>
-                );
-              })}
-            </div>
+                  <span className="text-xs text-slate-600 font-mono">
+                    Hal {page} dari {Math.max(1, Math.ceil(data.total / LIMIT))}
+                  </span>
+                </div>
 
-            {/* Pager */}
-            <div className="border-t border-slate-100 px-4 py-3">
-              <Pager page={page} total={data.total} limit={LIMIT} onChange={setPage} />
-            </div>
+                {data.items.length === 0 ? (
+                  <div className="p-12 text-center text-slate-500 space-y-2">
+                    <FileCheck className="h-10 w-10 text-slate-300 mx-auto" />
+                    <div className="text-sm font-semibold text-slate-700">Tidak ada data penerimaan yang cocok</div>
+                    <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                      Coba sesuaikan rentang tanggal atau bersihkan kata kunci pencarian.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="hidden lg:block overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-[#0B2149] text-white font-semibold">
+                          <tr>
+                            <th className="py-3 px-3 w-10 text-center">No</th>
+                            <th className="py-3 px-3">Tgl Datang</th>
+                            <th className="py-3 px-3">No. Tally</th>
+                            <th className="py-3 px-3">Surat Jalan / PO</th>
+                            <th className="py-3 px-3">Armada Truk</th>
+                            <th className="py-3 px-3">Material &amp; Batch</th>
+                            <th className="py-3 px-3">Vendor / Supplier</th>
+                            <th className="py-3 px-3 text-right">Kuantitas</th>
+                            <th className="py-3 px-3 text-center">Status Mutu</th>
+                            <th className="py-3 px-3">Aktor Verifikasi</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-700">
+                          {data.items.map((it, idx) => {
+                            const rowNo = (page - 1) * LIMIT + idx + 1;
+                            const isCompleted = it.status === "completed";
+                            const isHold = it.status.includes("hold");
+
+                            return (
+                              <tr key={it.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                                <td className="py-3 px-3 text-center font-mono text-slate-500">{rowNo}</td>
+                                <td className="py-3 px-3 font-mono text-slate-800 whitespace-nowrap">{it.arrival_date || "-"}</td>
+                                <td className="py-3 px-3 font-mono font-semibold text-blue-900 whitespace-nowrap">{it.doc_no}</td>
+                                <td className="py-3 px-3 whitespace-nowrap">
+                                  <div className="font-semibold text-slate-900">{it.delivery_note_no || "-"}</div>
+                                  <div className="text-[11px] text-slate-500 font-mono">PO: {it.po_no || "-"}</div>
+                                </td>
+                                <td className="py-3 px-3 whitespace-nowrap font-mono font-semibold text-slate-800">{it.truck_plate || "-"}</td>
+                                <td className="py-3 px-3 min-w-[200px]">
+                                  <div className="font-semibold text-slate-900">{it.material_name}</div>
+                                  <div className="text-[11px] text-slate-500 font-mono">
+                                    Kode: {it.material_code} | Batch: <span className="text-slate-800 font-semibold">{it.batch_fisik || "-"}</span>
+                                  </div>
+                                </td>
+                                <td className="py-3 px-3 max-w-[160px] truncate" title={it.supplier_name}>
+                                  <div className="font-medium text-slate-800">{it.supplier_name || "-"}</div>
+                                  {it.supplier_code && <div className="text-[10px] text-slate-400 font-mono">{it.supplier_code}</div>}
+                                </td>
+                                <td className="py-3 px-3 text-right whitespace-nowrap font-mono font-semibold text-slate-900">
+                                  {Number(it.qty || 0).toLocaleString("id-ID")} {it.uom}
+                                </td>
+                                <td className="py-3 px-3 text-center whitespace-nowrap">
+                                  <span
+                                    className={`inline-block px-2.5 py-0.5 rounded text-[11px] font-bold tracking-tight border ${
+                                      isCompleted
+                                        ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                        : isHold
+                                        ? "bg-amber-50 text-amber-900 border-amber-300"
+                                        : "bg-blue-50 text-blue-800 border-blue-200"
+                                    }`}
+                                  >
+                                    {isCompleted
+                                      ? "STOCK TER-UU"
+                                      : isHold
+                                      ? (it.pending_category || "HOLD")
+                                      : it.status.replace("_", " ").toUpperCase()}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-3 text-[11px] text-slate-600 whitespace-nowrap">
+                                  <div>Checker: <strong className="text-slate-800">{it.pic_name || it.created_by_name || "-"}</strong></div>
+                                  {it.qc_by_name && <div className="text-emerald-700 font-medium">QC: {it.qc_by_name}</div>}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="lg:hidden divide-y divide-slate-100">
+                      {data.items.map((it, idx) => {
+                        const rowNo = (page - 1) * LIMIT + idx + 1;
+                        const isCompleted = it.status === "completed";
+                        const isHold = it.status.includes("hold");
+
+                        return (
+                          <div key={it.id || idx} className="p-4 space-y-2.5">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <span className="text-[11px] font-mono text-slate-400 mr-2">#{rowNo}</span>
+                                <span className="font-mono font-bold text-blue-900 text-xs">{it.doc_no}</span>
+                                <div className="text-xs font-semibold text-slate-900 mt-0.5">{it.material_name}</div>
+                              </div>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border shrink-0 ${
+                                  isCompleted
+                                    ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                    : isHold
+                                    ? "bg-amber-50 text-amber-900 border-amber-300"
+                                    : "bg-blue-50 text-blue-800 border-blue-200"
+                                }`}
+                              >
+                                {isCompleted ? "Stock Ter-UU" : isHold ? "Hold" : it.status}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                              <div>
+                                <span className="text-slate-500">Surat Jalan:</span>{" "}
+                                <strong className="text-slate-800">{it.delivery_note_no || "-"}</strong>
+                              </div>
+                              <div>
+                                <span className="text-slate-500">Armada Truk:</span>{" "}
+                                <strong className="font-mono text-slate-800">{it.truck_plate || "-"}</strong>
+                              </div>
+                              <div>
+                                <span className="text-slate-500">Batch Fisik:</span>{" "}
+                                <strong className="font-mono text-slate-800">{it.batch_fisik || "-"}</strong>
+                              </div>
+                              <div>
+                                <span className="text-slate-500">Kuantitas:</span>{" "}
+                                <strong className="text-slate-900">{Number(it.qty || 0).toLocaleString("id-ID")} {it.uom}</strong>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="border-t border-slate-100 px-4 py-3">
+                      <Pager page={page} total={data.total} limit={LIMIT} onChange={setPage} />
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
+            {/* ================= TAB 2: EVALUASI KINERJA VENDOR (ISO 8.4) ================= */}
+            {activeTab === "vendor" && (
+              <>
+                <div className="border-b border-slate-100 bg-slate-50/70 px-5 py-4">
+                  <h3 className="text-sm font-bold text-slate-800">
+                    Evaluasi &amp; Peringkat Kinerja Pemasok (ISO 9001:2015 Clause 8.4)
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Penilaian rasio kelolosan mutu, kedatangan armada, dan kategori audit vendor pengirim.
+                  </p>
+                </div>
+
+                {vendorList.length === 0 ? (
+                  <div className="p-12 text-center text-slate-500">
+                    <Building2 className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+                    <div className="text-sm font-semibold text-slate-700">Belum ada data transaksi vendor pada periode ini</div>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-[#0B2149] text-white font-semibold">
+                        <tr>
+                          <th className="py-3 px-3 w-10 text-center">No</th>
+                          <th className="py-3 px-3">Nama Vendor / Supplier</th>
+                          <th className="py-3 px-3">Kode MKVZ</th>
+                          <th className="py-3 px-3 text-center">Total Pengiriman (SJ)</th>
+                          <th className="py-3 px-3 text-right">Total Volume Masuk</th>
+                          <th className="py-3 px-3 text-center">Selesai (Ter-UU)</th>
+                          <th className="py-3 px-3 text-center">Kasus Hold</th>
+                          <th className="py-3 px-3 text-right">Acceptance Rate</th>
+                          <th className="py-3 px-3 text-center">Grade Kinerja</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-slate-700">
+                        {vendorList.map((v, idx) => (
+                          <tr key={v.supplier_code || idx} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="py-3 px-3 text-center font-mono text-slate-500">{idx + 1}</td>
+                            <td className="py-3 px-3 font-semibold text-slate-900">{v.supplier_name}</td>
+                            <td className="py-3 px-3 font-mono text-slate-500">{v.supplier_code}</td>
+                            <td className="py-3 px-3 text-center font-bold text-slate-800">{v.total_docs} SJ</td>
+                            <td className="py-3 px-3 text-right font-mono font-semibold text-slate-900">
+                              {Number(v.total_qty || 0).toLocaleString("id-ID")} unit
+                            </td>
+                            <td className="py-3 px-3 text-center text-emerald-700 font-bold">{v.completed_docs}</td>
+                            <td className="py-3 px-3 text-center font-bold text-amber-700">{v.hold_docs}</td>
+                            <td className="py-3 px-3 text-right font-mono font-bold text-blue-900">
+                              {v.acceptance_rate}%
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <span
+                                className={`inline-block px-3 py-1 rounded-full text-[11px] font-bold border ${
+                                  v.grade_color === "emerald"
+                                    ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                                    : v.grade_color === "amber"
+                                    ? "bg-amber-50 text-amber-800 border-amber-300"
+                                    : "bg-rose-50 text-rose-800 border-rose-300"
+                                }`}
+                              >
+                                {v.grade}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* ================= TAB 3: LOG KETIDAKSESUAIAN & HOLD (ISO 8.7) ================= */}
+            {activeTab === "ncr" && (
+              <>
+                <div className="border-b border-slate-100 bg-amber-50/50 px-5 py-4">
+                  <h3 className="text-sm font-bold text-amber-950 flex items-center gap-2">
+                    <ShieldAlert className="h-4 w-4 text-amber-700" />
+                    Log Ketidaksesuaian &amp; Penahanan Material (ISO 9001:2015 Clause 8.7)
+                  </h3>
+                  <p className="text-xs text-amber-800/80">
+                    Daftar insiden penahanan fisik atau dokumen (Hold Admin &amp; Hold QC) untuk audit perbaikan mutu.
+                  </p>
+                </div>
+
+                {ncrList.length === 0 ? (
+                  <div className="p-12 text-center text-slate-500 space-y-2">
+                    <CheckCircle2 className="h-10 w-10 text-emerald-500 mx-auto" />
+                    <div className="text-sm font-semibold text-slate-700">Nihil Deviasi / Kasus Hold</div>
+                    <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                      Semua dokumen pada periode ini memenuhi standar inspeksi tanpa catatan penahanan terbuka.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-[#7F1D1D] text-white font-semibold">
+                        <tr>
+                          <th className="py-3 px-3 w-10 text-center">No</th>
+                          <th className="py-3 px-3">Tgl Masuk</th>
+                          <th className="py-3 px-3">No. Tally</th>
+                          <th className="py-3 px-3">Surat Jalan / PO</th>
+                          <th className="py-3 px-3">Vendor</th>
+                          <th className="py-3 px-3">Material &amp; Batch</th>
+                          <th className="py-3 px-3 text-center">Kategori Deviasi</th>
+                          <th className="py-3 px-3">Uraian Masalah / Alasan Hold</th>
+                          <th className="py-3 px-3 text-center">Status</th>
+                          <th className="py-3 px-3">PIC Bertugas</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-slate-700">
+                        {ncrList.map((ncr, idx) => (
+                          <tr key={ncr.id || idx} className="hover:bg-amber-50/40 transition-colors">
+                            <td className="py-3 px-3 text-center font-mono text-slate-500">{idx + 1}</td>
+                            <td className="py-3 px-3 font-mono text-slate-800 whitespace-nowrap">{ncr.arrival_date || "-"}</td>
+                            <td className="py-3 px-3 font-mono font-bold text-red-900 whitespace-nowrap">{ncr.doc_no}</td>
+                            <td className="py-3 px-3 whitespace-nowrap">
+                              <div className="font-semibold text-slate-900">{ncr.delivery_note_no || "-"}</div>
+                              <div className="text-[11px] text-slate-500 font-mono">PO: {ncr.po_no || "-"}</div>
+                            </td>
+                            <td className="py-3 px-3 font-medium text-slate-800 max-w-[150px] truncate">{ncr.supplier_name || "-"}</td>
+                            <td className="py-3 px-3">
+                              <div className="font-semibold text-slate-900">{ncr.material_name}</div>
+                              <div className="text-[11px] text-slate-500 font-mono">Batch: {ncr.batch_fisik || "-"}</div>
+                            </td>
+                            <td className="py-3 px-3 text-center whitespace-nowrap">
+                              <span className="inline-block px-2.5 py-0.5 rounded bg-amber-100 text-amber-900 font-bold border border-amber-300 text-[11px]">
+                                {ncr.pending_category || "Lain-lain"}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 max-w-[220px] text-slate-800 font-medium">{ncr.pending_reason || "-"}</td>
+                            <td className="py-3 px-3 text-center whitespace-nowrap">
+                              <span className="inline-block px-2 py-0.5 rounded bg-red-100 text-red-800 font-bold uppercase text-[10px] border border-red-200">
+                                {ncr.status}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-[11px] text-slate-600 whitespace-nowrap">
+                              {ncr.updated_by_name || ncr.created_by_name || "-"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* ================= TAB 4: MONITORING UMUR SIMPAN (FEFO) ================= */}
+            {activeTab === "shelf_life" && (
+              <>
+                <div className="border-b border-slate-100 bg-emerald-50/50 px-5 py-4">
+                  <h3 className="text-sm font-bold text-emerald-950 flex items-center gap-2">
+                    <Hourglass className="h-4 w-4 text-emerald-700" />
+                    Monitoring Umur Simpan &amp; Kontrol Kedaluwarsa (ISO 22000 / GMP FEFO)
+                  </h3>
+                  <p className="text-xs text-emerald-800/80">
+                    Pengawasan sisa umur simpan material saat tiba di gudang untuk mencegah penerimaan barang mendekati expired date.
+                  </p>
+                </div>
+
+                {shelfLifeList.length === 0 ? (
+                  <div className="p-12 text-center text-slate-500">
+                    <Hourglass className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+                    <div className="text-sm font-semibold text-slate-700">Belum ada data expired date pada periode ini</div>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-[#0B2149] text-white font-semibold">
+                        <tr>
+                          <th className="py-3 px-3 w-10 text-center">No</th>
+                          <th className="py-3 px-3">Tgl Kedatangan</th>
+                          <th className="py-3 px-3">Material &amp; Batch Fisik</th>
+                          <th className="py-3 px-3">Vendor</th>
+                          <th className="py-3 px-3 text-center">Tgl Produksi</th>
+                          <th className="py-3 px-3 text-center">Tgl Kedaluwarsa</th>
+                          <th className="py-3 px-3 text-right">Sisa Hari Simpan</th>
+                          <th className="py-3 px-3 text-right">% Sisa Umur</th>
+                          <th className="py-3 px-3 text-center">Kategori Keamanan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-slate-700">
+                        {shelfLifeList.map((sl, idx) => (
+                          <tr key={sl.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="py-3 px-3 text-center font-mono text-slate-500">{idx + 1}</td>
+                            <td className="py-3 px-3 font-mono text-slate-800 whitespace-nowrap">{sl.arrival_date || "-"}</td>
+                            <td className="py-3 px-3">
+                              <div className="font-semibold text-slate-900">{sl.material_name}</div>
+                              <div className="text-[11px] text-slate-500 font-mono">
+                                Kode: {sl.material_code} | Batch: <span className="text-slate-800 font-bold">{sl.batch_fisik || "-"}</span>
+                              </div>
+                            </td>
+                            <td className="py-3 px-3 font-medium text-slate-800 max-w-[150px] truncate">{sl.supplier_name || "-"}</td>
+                            <td className="py-3 px-3 text-center font-mono text-slate-600">{sl.production_date || "-"}</td>
+                            <td className="py-3 px-3 text-center font-mono font-bold text-slate-900">{sl.expired_date || "-"}</td>
+                            <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">
+                              {sl.remaining_days !== null ? `${sl.remaining_days} hari` : "-"}
+                            </td>
+                            <td className="py-3 px-3 text-right font-mono font-bold text-blue-900">
+                              {sl.remaining_pct !== null ? `${sl.remaining_pct}%` : "-"}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <span
+                                className={`inline-block px-3 py-1 rounded-full text-[11px] font-bold border ${
+                                  sl.shelf_status === "safe"
+                                    ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                                    : sl.shelf_status === "warning"
+                                    ? "bg-amber-50 text-amber-800 border-amber-300"
+                                    : "bg-rose-50 text-rose-800 border-rose-300"
+                                }`}
+                              >
+                                {sl.shelf_status === "safe"
+                                  ? "Aman (Fresh)"
+                                  : sl.shelf_status === "warning"
+                                  ? "Perhatian (Medium)"
+                                  : "Kritis / Near Expired"}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
           </>
         )}
       </div>

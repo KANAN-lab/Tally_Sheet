@@ -2038,7 +2038,131 @@ def get_reports_summary(
         LIMIT ? OFFSET ?
     """
     rows = conn.execute(items_query, params + [limit, offset]).fetchall()
+
+    # 4. Vendor Performance (ISO 9001 Clause 8.4 Evaluation)
+    vendor_query = f"""
+        SELECT 
+            coalesce(nullif(ti.supplier_name, ''), ts.supplier_name, 'Tanpa Vendor') as supplier_name,
+            coalesce(nullif(ti.supplier_code, ''), ts.supplier_code, '-') as supplier_code,
+            count(DISTINCT ts.id) as total_docs,
+            count(ti.id) as total_items,
+            coalesce(sum(ti.qty), 0) as total_qty,
+            count(DISTINCT CASE WHEN ts.status = 'completed' THEN ts.id END) as completed_docs,
+            count(DISTINCT CASE WHEN ts.status IN ('hold_admin', 'hold_qc') THEN ts.id END) as hold_docs
+        FROM tally_sheets ts
+        LEFT JOIN tally_items ti ON ts.id = ti.sheet_id
+        WHERE {where_str}
+        GROUP BY coalesce(nullif(ti.supplier_name, ''), ts.supplier_name, 'Tanpa Vendor')
+        ORDER BY total_docs DESC, total_qty DESC
+    """
+    vendor_rows = conn.execute(vendor_query, params).fetchall()
+    vendor_perf = []
+    for vr in vendor_rows:
+        v_total = vr["total_docs"] or 0
+        v_comp = vr["completed_docs"] or 0
+        v_rate = round((v_comp / v_total * 100), 1) if v_total > 0 else 100.0
+        if v_rate >= 98.0:
+            grade = "Grade A (Excellent)"
+            grade_color = "emerald"
+        elif v_rate >= 90.0:
+            grade = "Grade B (Perhatian)"
+            grade_color = "amber"
+        else:
+            grade = "Grade C (Kritis / NCR)"
+            grade_color = "rose"
+
+        vendor_perf.append({
+            "supplier_name": vr["supplier_name"],
+            "supplier_code": vr["supplier_code"],
+            "total_docs": v_total,
+            "total_items": vr["total_items"] or 0,
+            "total_qty": round(float(vr["total_qty"] or 0), 2),
+            "completed_docs": v_comp,
+            "hold_docs": vr["hold_docs"] or 0,
+            "acceptance_rate": v_rate,
+            "grade": grade,
+            "grade_color": grade_color
+        })
+
+    # 5. Non-Conformance / NCR Log (ISO 9001 Clause 8.7)
+    ncr_query = f"""
+        SELECT 
+            ti.id, ti.sheet_id, ti.material_code, ti.material_name, ti.uom, ti.qty,
+            ti.supplier_name, ti.batch_fisik,
+            ts.doc_no, ts.delivery_note_no, ts.po_no, ts.truck_plate, ts.arrival_date,
+            ts.status, ts.pending_category, ts.pending_reason,
+            ts.created_by_name, ts.updated_by_name, ts.created_at
+        FROM tally_sheets ts
+        JOIN tally_items ti ON ts.id = ti.sheet_id
+        WHERE ({where_str}) AND (ts.status IN ('hold_admin', 'hold_qc', 'cancelled') OR ts.pending_category != '' OR ts.pending_reason != '')
+        ORDER BY ts.arrival_date DESC, ts.created_at DESC
+        LIMIT 50
+    """
+    ncr_rows = conn.execute(ncr_query, params).fetchall()
+    ncr_items = [dict(r) for r in ncr_rows]
+
+    # 6. Shelf Life & Expired Control (ISO 22000 / GMP)
+    shelf_query = f"""
+        SELECT 
+            ti.id, ti.sheet_id, ti.material_code, ti.material_name, ti.uom, ti.qty,
+            ti.supplier_name, ti.batch_fisik, ti.supplier_batch,
+            ti.production_date, ti.expired_date,
+            ts.doc_no, ts.delivery_note_no, ts.arrival_date, ts.created_at
+        FROM tally_sheets ts
+        JOIN tally_items ti ON ts.id = ti.sheet_id
+        WHERE ({where_str}) AND (ti.expired_date != '' AND ti.expired_date IS NOT NULL)
+        ORDER BY ti.expired_date ASC
+        LIMIT 50
+    """
+    shelf_rows = conn.execute(shelf_query, params).fetchall()
     conn.close()
+
+    shelf_life_items = []
+    for sr in shelf_rows:
+        arr_str = sr["arrival_date"] or (sr["created_at"] or "")[:10]
+        prod_str = sr["production_date"] or ""
+        exp_str = sr["expired_date"] or ""
+
+        rem_pct = None
+        rem_days = None
+        status_code = "safe"
+
+        try:
+            exp_d = datetime.date.fromisoformat(exp_str)
+            arr_d = datetime.date.fromisoformat(arr_str) if arr_str else datetime.date.today()
+            rem_days = (exp_d - arr_d).days
+
+            if prod_str:
+                prod_d = datetime.date.fromisoformat(prod_str)
+                total_days = (exp_d - prod_d).days
+                if total_days > 0:
+                    rem_pct = round(max(0, rem_days) / total_days * 100, 1)
+            
+            if rem_days < 0:
+                status_code = "expired"
+            elif rem_pct is not None:
+                if rem_pct >= 70:
+                    status_code = "safe"
+                elif rem_pct >= 50:
+                    status_code = "warning"
+                else:
+                    status_code = "critical"
+            else:
+                if rem_days >= 180:
+                    status_code = "safe"
+                elif rem_days >= 90:
+                    status_code = "warning"
+                else:
+                    status_code = "critical"
+        except Exception:
+            pass
+
+        shelf_life_items.append({
+            **dict(sr),
+            "remaining_days": rem_days,
+            "remaining_pct": rem_pct,
+            "shelf_status": status_code
+        })
 
     items = [dict(r) for r in rows]
     return {
@@ -2046,8 +2170,12 @@ def get_reports_summary(
         "items": items,
         "total": total_items,
         "page": page,
-        "limit": limit
+        "limit": limit,
+        "vendor_performance": vendor_perf,
+        "non_conformance": ncr_items,
+        "shelf_life": shelf_life_items
     }
+
 
 @app.get("/api/reports/export-excel")
 def export_reports_excel(
