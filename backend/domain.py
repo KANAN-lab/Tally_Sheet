@@ -20,6 +20,113 @@ DEFAULT_WORKFLOW_STAGES = [
     {"id": "qc", "name": "3. Quality Control", "role": "qc", "desc": "Uji Mutu Fisik & Stock Ter-UU"}
 ]
 
+# ----------------- OOP: QA CONTROLLED DOCUMENT REGISTRY -----------------
+class QADocumentRegistry:
+    """
+    ISO 9001:2015 Clause 7.5 Controlled Document Master Registry for PT DIAMOND COLD STORAGE (PLANT 2111).
+    Menjaga identitas resmi formulir terdaftar di Quality Assurance (QA).
+    Contoh: Form Tally Sheet (SOP.WH-D.01), Form Berita Acara Penerimaan Import (SOP.WH-D.02).
+    """
+    REGISTRY: Dict[str, Dict[str, str]] = {
+        "TALLY_SHEET": {
+            "doc_code": "SOP.WH-D.01",
+            "doc_title": "FORM TALLY SHEET PENERIMAAN MATERIAL",
+            "revision": "01",
+            "effective_date": "01 Januari 2024",
+            "retention_period": "2 Tahun",
+            "controlled_by": "QA / Document Control",
+            "plant": "PT DIAMOND COLD STORAGE - PLANT 2111 (CIBITUNG)"
+        },
+        "BERITA_ACARA_IMPORT": {
+            "doc_code": "SOP.WH-D.02",
+            "doc_title": "BERITA ACARA PENERIMAAN BARANG IMPORT",
+            "revision": "01",
+            "effective_date": "01 Januari 2024",
+            "retention_period": "3 Tahun",
+            "controlled_by": "QA / Document Control",
+            "plant": "PT DIAMOND COLD STORAGE - PLANT 2111 (CIBITUNG)"
+        }
+    }
+
+    @classmethod
+    def get_doc(cls, form_key: str) -> Dict[str, str]:
+        return cls.REGISTRY.get(form_key, {
+            "doc_code": "SOP.WH-D.00",
+            "doc_title": "DOKUMEN TERKENDALI GUDANG",
+            "revision": "00",
+            "effective_date": "-",
+            "retention_period": "-",
+            "controlled_by": "QA",
+            "plant": "PT DIAMOND COLD STORAGE - PLANT 2111"
+        })
+
+    @classmethod
+    def get_all(cls) -> Dict[str, Dict[str, str]]:
+        return cls.REGISTRY
+
+
+# ----------------- OOP: BERITA ACARA DOMAIN MODEL -----------------
+class BeritaAcaraRecord:
+    """
+    OOP Model Berita Acara Penerimaan Barang Import (SOP.WH-D.02).
+    Mengelola seluruh status inspeksi kontainer pengiriman (sebelum & sesudah bongkar)
+    serta evaluasi kondisi fisik barang dan tanda tangan 3 peran.
+    """
+    def __init__(self, data: Optional[Dict[str, Any]] = None):
+        data = data or {}
+        # Header Kontainer
+        self.container_no = str(data.get("container_no", "")).strip()
+        self.seal_no = str(data.get("seal_no", "")).strip()
+        self.seal_condition = str(data.get("seal_condition", "Baik / Utuh")).strip()
+        self.container_temp_type = str(data.get("container_temp_type", "Frozen")).strip()  # Dry / Chiller / Frozen
+        self.temp_celsius = str(data.get("temp_celsius", "")).strip()
+
+        # 1. Kondisi Fisik Kontainer Sebelum Dibongkar
+        self.floor_before = str(data.get("floor_before", "Rata, tidak ditemukan kebocoran, bersih, tidak berminyak")).strip()
+        self.wall_before = str(data.get("wall_before", "Tidak penyok, tidak baret, tidak bolong")).strip()
+
+        # 2. Kondisi Fisik Kontainer Setelah Isi Kontainer Dibongkar
+        self.floor_after = str(data.get("floor_after", "Rata, tidak ditemukan kebocoran")).strip()
+        self.wall_after = str(data.get("wall_after", "Tidak penyok, tidak baret, tidak bolong")).strip()
+
+        # 3. Kondisi Isi Barang Yang Dikirim
+        self.cargo_arrangement = str(data.get("cargo_arrangement", "Baik")).strip()  # Baik / Roboh
+        self.cargo_arrangement_notes = str(data.get("cargo_arrangement_notes", "")).strip()
+        self.cargo_condition = str(data.get("cargo_condition", "Baik, tidak ditemukan pecah / bocor")).strip()
+        self.cargo_condition_notes = str(data.get("cargo_condition_notes", "")).strip()
+        self.cargo_qty_match = str(data.get("cargo_qty_match", "Sesuai dengan Packing List")).strip()
+        self.cargo_qty_notes = str(data.get("cargo_qty_notes", "")).strip()
+
+        # Penutup & Legalitas
+        self.location = str(data.get("location", "Cibitung")).strip()
+        self.spv_name = str(data.get("spv_name", "")).strip()
+        self.manager_name = str(data.get("manager_name", "")).strip()
+        self.driver_name = str(data.get("driver_name", "")).strip()
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "container_no": self.container_no,
+            "seal_no": self.seal_no,
+            "seal_condition": self.seal_condition,
+            "container_temp_type": self.container_temp_type,
+            "temp_celsius": self.temp_celsius,
+            "floor_before": self.floor_before,
+            "wall_before": self.wall_before,
+            "floor_after": self.floor_after,
+            "wall_after": self.wall_after,
+            "cargo_arrangement": self.cargo_arrangement,
+            "cargo_arrangement_notes": self.cargo_arrangement_notes,
+            "cargo_condition": self.cargo_condition,
+            "cargo_condition_notes": self.cargo_condition_notes,
+            "cargo_qty_match": self.cargo_qty_match,
+            "cargo_qty_notes": self.cargo_qty_notes,
+            "location": self.location,
+            "spv_name": self.spv_name,
+            "manager_name": self.manager_name,
+            "driver_name": self.driver_name
+        }
+
+
 # ----------------- OOP: SETTINGS SERVICE -----------------
 class SettingsService:
     """Manages application-wide settings with zero hardcoding."""

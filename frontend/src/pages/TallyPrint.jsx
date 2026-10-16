@@ -42,14 +42,36 @@ export default function TallyPrint() {
               <h1 className="text-xl font-extrabold tracking-wide mt-0.5" style={{ fontFamily: "Manrope" }}>TALLY SHEET</h1>
             </div>
           </div>
-          <table className="text-[11px]">
+          <table className="text-[11px] border-collapse">
             <tbody>
-              <tr><td className="pr-3 font-semibold">No. Dokumen</td><td data-testid="print-doc-no">: {sheet.doc_no}</td></tr>
-              <tr><td className="pr-3 font-semibold">No. Surat Jalan (SJ)</td><td>: <span className="font-mono font-bold">{sheet.delivery_note_no || "-"}</span></td></tr>
-              <tr><td className="pr-3 font-semibold">No. PO SAP</td><td>: <span className="font-mono font-bold">{sheet.po_no || "-"}</span></td></tr>
-              <tr><td className="pr-3 font-semibold">Tanggal Kedatangan</td><td>: {sheet.arrival_date ? fmtDate(sheet.arrival_date) : fmtDate(sheet.created_at)}</td></tr>
-              <tr><td className="pr-3 font-semibold">No. Polisi Armada</td><td>: {sheet.truck_plate || "-"}</td></tr>
-              <tr><td className="pr-3 font-semibold">Status</td><td>: <span className="font-bold">{sheet.status === "completed" ? "SELESAI (STOCK TER-UU)" : sheet.status.toUpperCase()}</span></td></tr>
+              <tr>
+                <td className="pr-3 font-bold text-slate-800">No. Dokumen Resmi (QA)</td>
+                <td>: <span className="font-mono font-black text-blue-950 bg-slate-100 px-1 py-0.5 rounded">{sheet.qa_doc_no || "SOP.WH-D.01"}</span> (Rev: 01)</td>
+              </tr>
+              <tr>
+                <td className="pr-3 font-semibold text-slate-600">No. Transaksi Tally Sheet</td>
+                <td data-testid="print-doc-no">: <span className="font-mono font-bold">{sheet.doc_no}</span></td>
+              </tr>
+              <tr>
+                <td className="pr-3 font-semibold text-slate-600">No. Surat Jalan (SJ)</td>
+                <td>: <span className="font-mono font-bold">{sheet.delivery_note_no || "-"}</span></td>
+              </tr>
+              <tr>
+                <td className="pr-3 font-semibold text-slate-600">No. PO SAP</td>
+                <td>: <span className="font-mono font-bold">{sheet.po_no || "-"}</span></td>
+              </tr>
+              <tr>
+                <td className="pr-3 font-semibold text-slate-600">Tanggal Kedatangan</td>
+                <td>: {sheet.arrival_date ? fmtDate(sheet.arrival_date) : fmtDate(sheet.created_at)}</td>
+              </tr>
+              <tr>
+                <td className="pr-3 font-semibold text-slate-600">No. Polisi Armada</td>
+                <td>: <span className="font-mono font-bold">{sheet.truck_plate || "-"}</span></td>
+              </tr>
+              <tr>
+                <td className="pr-3 font-semibold text-slate-600">Status</td>
+                <td>: <span className="font-bold">{sheet.status === "completed" ? "SELESAI (STOCK TER-UU)" : sheet.status.toUpperCase()}</span></td>
+              </tr>
             </tbody>
           </table>
         </div>

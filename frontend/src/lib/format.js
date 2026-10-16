@@ -41,6 +41,10 @@ export function openPrint(id) {
   window.open(`/tally/${id}/print`, "_blank", "noopener");
 }
 
+export function openBeritaAcaraPrint(id) {
+  window.open(`/tally/${id}/print-ba`, "_blank", "noopener");
+}
+
 export function formatTruckPlate(raw) {
   if (!raw) return "";
   let val = String(raw).toUpperCase().replace(/[^A-Z0-9]/g, "");

@@ -38,7 +38,7 @@ import StatusBadge from "@/components/StatusBadge";
 import { DetailSkeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/context/AuthContext";
 import { api, downloadExcel, errMsg } from "@/lib/api";
-import { canCancel, canEdit, fmtDate, fmtDateTime, openPrint } from "@/lib/format";
+import { canCancel, canEdit, fmtDate, fmtDateTime, openPrint, openBeritaAcaraPrint } from "@/lib/format";
 import { swalAlert, swalConfirm, swalPromptReason } from "@/lib/swal";
 import { WorkflowService } from "@/services/WorkflowService";
 
@@ -330,6 +330,15 @@ export default function TallyDetail() {
             >
               <Printer className="mr-1.5 h-4 w-4" /> PRINT TALLY SHEET
             </Button>
+            {sheet.has_berita_acara && (
+              <Button
+                onClick={() => openBeritaAcaraPrint(sheet.id)}
+                className="bg-blue-700 hover:bg-blue-800 font-semibold text-xs text-white shadow-xs"
+                data-testid="tally-detail-print-ba-button"
+              >
+                <Printer className="mr-1.5 h-4 w-4" /> CETAK BERITA ACARA (BA)
+              </Button>
+            )}
             <Button
               onClick={exportX}
               className="bg-emerald-600 hover:bg-emerald-700 font-semibold text-xs"
@@ -481,9 +490,22 @@ export default function TallyDetail() {
 
       {/* INCOMING GOODS HEADER METADATA (Supplier & Nama Supir removed from header) */}
       <div className="rounded-xl border bg-white p-5 shadow-sm space-y-4" data-testid="tally-detail-header-card">
-        <div className="flex items-center gap-2 font-display text-sm font-bold text-[#0B2149] border-b pb-2">
-          <FileText className="h-4 w-4 text-blue-700" />
-          Rincian Header Surat Jalan & PO SAP Kedatangan
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b pb-2">
+          <div className="flex items-center gap-2 font-display text-sm font-bold text-[#0B2149]">
+            <FileText className="h-4 w-4 text-blue-700" />
+            Rincian Header Surat Jalan & PO SAP Kedatangan
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-semibold text-slate-500 uppercase">Standar QA Terkendali:</span>
+            <span className="font-mono text-xs font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+              {sheet.qa_doc_no || "SOP.WH-D.01"}
+            </span>
+            {sheet.has_berita_acara && (
+              <span className="font-mono text-xs font-bold text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
+                <Truck className="h-3 w-3" /> {sheet.ba_qa_doc_no || "SOP.WH-D.02"}
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -492,6 +514,54 @@ export default function TallyDetail() {
           <MetaBox label="Tanggal Kedatangan" value={sheet.arrival_date ? fmtDate(sheet.arrival_date) : "-"} testId="detail-arrival-date" />
           <MetaBox label="No. Polisi Armada Truk" value={sheet.truck_plate} mono testId="detail-truck-plate" />
         </div>
+
+        {/* BERITA ACARA CONTAINER SECTION IF ACTIVE */}
+        {sheet.has_berita_acara && (
+          <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Truck className="h-4 w-4 text-blue-700" />
+                <span className="text-xs font-bold text-blue-950 uppercase tracking-wide">
+                  Berita Acara Penerimaan Barang Import (SOP.WH-D.02)
+                </span>
+              </div>
+              <button
+                onClick={() => openBeritaAcaraPrint(sheet.id)}
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 underline"
+              >
+                <Printer className="h-3.5 w-3.5" /> Buka Formulir Cetak
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                <span className="text-[10px] text-slate-500 block uppercase font-semibold">No. Container</span>
+                <span className="font-mono font-bold text-blue-950">
+                  {sheet.ba_container_no || sheet.berita_acara?.container_no || "-"}
+                </span>
+              </div>
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                <span className="text-[10px] text-slate-500 block uppercase font-semibold">No. Segel</span>
+                <span className="font-mono font-bold text-slate-800">
+                  {sheet.ba_seal_no || sheet.berita_acara?.seal_no || "-"}
+                </span>
+              </div>
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                <span className="text-[10px] text-slate-500 block uppercase font-semibold">Kondisi Segel</span>
+                <span className="font-medium text-slate-800">
+                  {sheet.ba_seal_condition || sheet.berita_acara?.seal_condition || "-"}
+                </span>
+              </div>
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                <span className="text-[10px] text-slate-500 block uppercase font-semibold">Suhu Container</span>
+                <span className="font-medium text-slate-800">
+                  {sheet.ba_container_temp || sheet.berita_acara?.container_temp_type || "-"}
+                  {sheet.berita_acara?.temp_celsius ? ` (${sheet.berita_acara.temp_celsius}°C)` : ""}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 pt-2 border-t text-xs">
           <div>

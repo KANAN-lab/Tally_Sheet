@@ -20,9 +20,9 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 import requests
 
 try:
-    from domain import WorkflowManager, SettingsService, DEFAULT_HOLD_CATEGORIES, DEFAULT_WORKFLOW_STAGES
+    from domain import WorkflowManager, SettingsService, DEFAULT_HOLD_CATEGORIES, DEFAULT_WORKFLOW_STAGES, QADocumentRegistry, BeritaAcaraRecord
 except ImportError:
-    from backend.domain import WorkflowManager, SettingsService, DEFAULT_HOLD_CATEGORIES, DEFAULT_WORKFLOW_STAGES
+    from backend.domain import WorkflowManager, SettingsService, DEFAULT_HOLD_CATEGORIES, DEFAULT_WORKFLOW_STAGES, QADocumentRegistry, BeritaAcaraRecord
 
 # Constants
 SECRET_KEY = os.environ.get("SECRET_KEY", "tally_secret_key_production_grade_jwt_token")
@@ -365,6 +365,14 @@ def init_db():
             ("gr_by_id", "TEXT DEFAULT ''"),
             ("gr_at", "TEXT DEFAULT ''"),
             ("gr_notes", "TEXT DEFAULT ''"),
+            ("qa_doc_no", "TEXT DEFAULT 'SOP.WH-D.01'"),
+            ("has_berita_acara", "INTEGER DEFAULT 0"),
+            ("ba_qa_doc_no", "TEXT DEFAULT 'SOP.WH-D.02'"),
+            ("ba_data_json", "TEXT DEFAULT '{}'"),
+            ("ba_container_no", "TEXT DEFAULT ''"),
+            ("ba_seal_no", "TEXT DEFAULT ''"),
+            ("ba_seal_condition", "TEXT DEFAULT ''"),
+            ("ba_container_temp", "TEXT DEFAULT ''"),
         ]
         for col_name, col_type in new_sheet_cols:
             if col_name not in sheet_cols:
@@ -709,6 +717,13 @@ def update_settings(req: SettingsRequest, admin: dict = Depends(require_admin)):
     req_str = ", ".join([k for k, v in req.required.items() if v])
     log_activity(admin["id"], admin["name"], "update_settings", "settings", "global", f"Kolom wajib: {req_str}; aturan duplikat: {req.duplicate_rule}; {len(res['hold_categories'])} kategori hold")
     return res
+
+# ----------------- QA DOCUMENT CONTROL REGISTRY -----------------
+@app.get("/api/qa-docs")
+def get_qa_documents():
+    """Mengembalikan daftar nomor format resmi formulir terkendali ISO 9001:2015 QA."""
+    return QADocumentRegistry.get_all()
+
 
 # ----------------- DASHBOARD -----------------
 @app.get("/api/dashboard")
@@ -1249,6 +1264,10 @@ class TallySheetInput(BaseModel):
     driver_name: Optional[str] = ""
     truck_plate: Optional[str] = ""
     action: str = "draft"  # "draft" | "submit_to_admin" | "final"
+    qa_doc_no: Optional[str] = "SOP.WH-D.01"
+    has_berita_acara: Optional[bool] = False
+    ba_qa_doc_no: Optional[str] = "SOP.WH-D.02"
+    berita_acara: Optional[Dict[str, Any]] = None
     items: List[TallyItemInput]
 
 class WorkflowTransitionInput(BaseModel):
@@ -1443,18 +1462,34 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
     drv_name = (req.driver_name or "").strip()
     trk_plate = (req.truck_plate or "").strip()
 
+    if not trk_plate:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Nomor Polisi Armada Truk wajib diisi (Mandatory).")
+
+    qa_code = (req.qa_doc_no or "SOP.WH-D.01").strip()
+    has_ba = 1 if req.has_berita_acara else 0
+    ba_qa_code = (req.ba_qa_doc_no or "SOP.WH-D.02").strip()
+    ba_rec = BeritaAcaraRecord(req.berita_acara) if req.berita_acara else BeritaAcaraRecord()
+    ba_json = json.dumps(ba_rec.to_dict()) if has_ba else "{}"
+    ba_cont = ba_rec.container_no if has_ba else ""
+    ba_seal = ba_rec.seal_no if has_ba else ""
+    ba_seal_cond = ba_rec.seal_condition if has_ba else ""
+    ba_temp = ba_rec.container_temp_type if has_ba else ""
+
     conn.execute("""
         INSERT INTO tally_sheets 
         (id, doc_no, status, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at,
          finalized_at, finalized_by, finalized_by_name,
          delivery_note_no, po_no, supplier_code, supplier_name, arrival_date, driver_name, truck_plate,
-         current_handler_role, current_handler_name)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         current_handler_role, current_handler_name,
+         qa_doc_no, has_berita_acara, ba_qa_doc_no, ba_data_json, ba_container_no, ba_seal_no, ba_seal_condition, ba_container_temp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         sheet_id, doc_no, status, user["id"], user["name"], now, user["id"], user["name"], now,
         now if status == "completed" else None, user["id"] if status == "completed" else None, user["name"] if status == "completed" else None,
         delivery_note, po_num, sup_code, sup_name, arr_date, drv_name, trk_plate,
-        handler_role, handler_name
+        handler_role, handler_name,
+        qa_code, has_ba, ba_qa_code, ba_json, ba_cont, ba_seal, ba_seal_cond, ba_temp
     ))
 
     # Fetch users map for pic_name
@@ -1594,6 +1629,14 @@ def get_tally_sheet(sheet_id: str):
         "cancelled_by": sheet["cancelled_by"],
         "cancelled_by_name": sheet["cancelled_by_name"],
         "cancel_reason": sheet["cancel_reason"],
+        "qa_doc_no": sheet["qa_doc_no"] if "qa_doc_no" in sheet.keys() and sheet["qa_doc_no"] else "SOP.WH-D.01",
+        "has_berita_acara": bool(sheet["has_berita_acara"]) if "has_berita_acara" in sheet.keys() else False,
+        "ba_qa_doc_no": sheet["ba_qa_doc_no"] if "ba_qa_doc_no" in sheet.keys() and sheet["ba_qa_doc_no"] else "SOP.WH-D.02",
+        "ba_container_no": sheet["ba_container_no"] if "ba_container_no" in sheet.keys() else "",
+        "ba_seal_no": sheet["ba_seal_no"] if "ba_seal_no" in sheet.keys() else "",
+        "ba_seal_condition": sheet["ba_seal_condition"] if "ba_seal_condition" in sheet.keys() else "",
+        "ba_container_temp": sheet["ba_container_temp"] if "ba_container_temp" in sheet.keys() else "",
+        "berita_acara": json.loads(sheet["ba_data_json"]) if ("ba_data_json" in sheet.keys() and sheet["ba_data_json"]) else {},
         "pic_names": list(pic_names),
         "items": item_list
     }
@@ -1637,19 +1680,46 @@ def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends
     drv_name = (req.driver_name or sheet["driver_name"] or "").strip()
     trk_plate = (req.truck_plate or sheet["truck_plate"] or "").strip()
 
+    if not trk_plate:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Nomor Polisi Armada Truk wajib diisi (Mandatory).")
+
+    qa_code = (req.qa_doc_no or (sheet["qa_doc_no"] if "qa_doc_no" in sheet.keys() and sheet["qa_doc_no"] else "SOP.WH-D.01")).strip()
+    has_ba = 1 if req.has_berita_acara else (1 if (sheet.get("has_berita_acara") and req.has_berita_acara is not False) else 0)
+    ba_qa_code = (req.ba_qa_doc_no or (sheet["ba_qa_doc_no"] if "ba_qa_doc_no" in sheet.keys() and sheet["ba_qa_doc_no"] else "SOP.WH-D.02")).strip()
+
+    if req.berita_acara:
+        ba_rec = BeritaAcaraRecord(req.berita_acara)
+    elif "ba_data_json" in sheet.keys() and sheet["ba_data_json"]:
+        try:
+            ba_rec = BeritaAcaraRecord(json.loads(sheet["ba_data_json"]))
+        except Exception:
+            ba_rec = BeritaAcaraRecord()
+    else:
+        ba_rec = BeritaAcaraRecord()
+
+    ba_json = json.dumps(ba_rec.to_dict()) if has_ba else "{}"
+    ba_cont = ba_rec.container_no if has_ba else ""
+    ba_seal = ba_rec.seal_no if has_ba else ""
+    ba_seal_cond = ba_rec.seal_condition if has_ba else ""
+    ba_temp = ba_rec.container_temp_type if has_ba else ""
+
     conn.execute("""
         UPDATE tally_sheets 
         SET status = ?, updated_by = ?, updated_by_name = ?, updated_at = ?,
             finalized_at = ?, finalized_by = ?, finalized_by_name = ?,
             delivery_note_no = ?, po_no = ?, supplier_code = ?, supplier_name = ?,
             arrival_date = ?, driver_name = ?, truck_plate = ?,
-            current_handler_role = ?, current_handler_name = ?
+            current_handler_role = ?, current_handler_name = ?,
+            qa_doc_no = ?, has_berita_acara = ?, ba_qa_doc_no = ?, ba_data_json = ?,
+            ba_container_no = ?, ba_seal_no = ?, ba_seal_condition = ?, ba_container_temp = ?
         WHERE id = ?
     """, (
         new_status, user["id"], user["name"], now,
         now if new_status == "completed" else None, user["id"] if new_status == "completed" else None, user["name"] if new_status == "completed" else None,
         delivery_note, po_num, sup_code, sup_name, arr_date, drv_name, trk_plate,
         handler_role, handler_name,
+        qa_code, has_ba, ba_qa_code, ba_json, ba_cont, ba_seal, ba_seal_cond, ba_temp,
         actual_id
     ))
 

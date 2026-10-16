@@ -131,6 +131,32 @@ export default function TallyEditor() {
     truck_plate: ""
   });
 
+  // Berita Acara Penerimaan Barang Import (SOP.WH-D.02)
+  const [hasBeritaAcara, setHasBeritaAcara] = useState(false);
+  const [beritaAcara, setBeritaAcara] = useState({
+    container_no: "",
+    seal_no: "",
+    seal_condition: "Baik / Utuh",
+    container_temp_type: "Frozen",
+    temp_celsius: "",
+    floor_before: "Rata, tidak ditemukan kebocoran, bersih, tidak berminyak",
+    wall_before: "Tidak penyok, tidak baret, tidak bolong",
+    floor_after: "Rata, tidak ditemukan kebocoran",
+    wall_after: "Tidak penyok, tidak baret, tidak bolong",
+    cargo_arrangement: "Baik",
+    cargo_arrangement_notes: "",
+    cargo_condition: "Baik, tidak ditemukan pecah / bocor",
+    cargo_condition_notes: "",
+    cargo_qty_match: "Sesuai dengan Packing List",
+    cargo_qty_notes: "",
+    driver_name: "",
+    location: "Cibitung"
+  });
+
+  const updateBeritaAcara = (k, v) => {
+    setBeritaAcara((prev) => ({ ...prev, [k]: v }));
+  };
+
   useEffect(() => {
     api.get("/settings").then((r) => setSettings(r.data));
 
@@ -149,6 +175,14 @@ export default function TallyEditor() {
             arrival_date: r.data.arrival_date || new Date().toISOString().slice(0, 10),
             truck_plate: r.data.truck_plate || ""
           });
+
+          if (r.data.has_berita_acara) {
+            setHasBeritaAcara(true);
+            if (r.data.berita_acara) {
+              setBeritaAcara((prev) => ({ ...prev, ...r.data.berita_acara }));
+            }
+          }
+
           setRows(
             r.data.items.map((it) => ({
               ...blank(user),
@@ -222,6 +256,17 @@ export default function TallyEditor() {
     if (!header.po_no.trim()) {
       return toast.error("Nomor PO SAP wajib diisi sebelum lanjut.");
     }
+    if (!header.truck_plate.trim()) {
+      return toast.error("Nomor Polisi Armada Truk wajib diisi (Mandatory).");
+    }
+    if (hasBeritaAcara) {
+      if (!beritaAcara.container_no.trim()) {
+        return toast.error("Nomor Container wajib diisi jika Berita Acara aktif.");
+      }
+      if (!beritaAcara.seal_no.trim()) {
+        return toast.error("Nomor Segel Container wajib diisi jika Berita Acara aktif.");
+      }
+    }
     setCurrentStep(2);
   };
 
@@ -247,7 +292,7 @@ export default function TallyEditor() {
     if (action === "submit_to_admin") {
       const ok = await swalConfirm({
         title: "Kirim Dokumen ke Admin Warehouse?",
-        text: `Dokumen dengan No. SJ "${header.delivery_note_no}" dan PO "${header.po_no}" akan diteruskan ke antrean Admin Warehouse untuk verifikasi.`,
+        text: `Dokumen dengan No. SJ "${header.delivery_note_no}", PO "${header.po_no}", dan Nopol "${header.truck_plate}" akan diteruskan ke antrean Admin Warehouse untuk verifikasi.`,
         confirmButtonText: "Ya, Kirim Dokumen",
         confirmButtonColor: "#1d4ed8"
       });
@@ -265,6 +310,10 @@ export default function TallyEditor() {
       arrival_date: header.arrival_date || new Date().toISOString().slice(0, 10),
       truck_plate: header.truck_plate.trim(),
       action,
+      qa_doc_no: "SOP.WH-D.01",
+      has_berita_acara: hasBeritaAcara,
+      ba_qa_doc_no: "SOP.WH-D.02",
+      berita_acara: hasBeritaAcara ? beritaAcara : null,
       items: filled.map((r) => ({
         material_code: r.material_code,
         material_name: r.material_name,
@@ -478,13 +527,15 @@ export default function TallyEditor() {
 
             {/* No. Polisi Armada Truk */}
             <div>
-              <Label className="text-xs font-semibold text-slate-800">No. Polisi Armada Truk (Opsional)</Label>
+              <Label className="text-xs font-semibold text-slate-800">
+                No. Polisi Armada Truk <span className="text-rose-600 font-bold">*</span>
+              </Label>
               <Input
-                placeholder="B 1234 ABC"
+                placeholder="Contoh: B 1234 ABC"
                 value={header.truck_plate}
                 onChange={(e) => updateHeader("truck_plate", formatTruckPlate(e.target.value))}
                 maxLength={12}
-                className="mt-1 font-mono uppercase text-xs"
+                className="mt-1 font-mono uppercase text-xs font-semibold"
                 data-testid="input-truck-plate"
               />
             </div>
@@ -498,8 +549,167 @@ export default function TallyEditor() {
                   <span className="text-slate-500 font-mono">({user?.email})</span>
                 </div>
                 <span className="rounded bg-white px-2 py-0.5 text-[11px] font-semibold text-blue-700 border border-blue-200 self-start sm:self-auto">
-                  Terkunci Otomatis (Mandatory PIC)
+                  Terkunci Otomatis (PIC Standar ISO)
                 </span>
+              </div>
+            </div>
+
+            {/* TOGGLE SWITCH: BERITA ACARA PENERIMAAN BARANG IMPORT */}
+            <div className="sm:col-span-2 pt-2">
+              <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50/70 via-slate-50 to-white p-4 sm:p-5 shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Truck className="h-4 w-4 text-blue-700" />
+                      <span className="text-xs font-bold text-[#0B2149]">
+                        Perlu Berita Acara Penerimaan Kontainer / Import?
+                      </span>
+                      <span className="rounded bg-blue-100 px-2 py-0.5 text-[10px] font-mono font-bold text-blue-900 border border-blue-200">
+                        SOP.WH-D.02
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      Aktifkan khusus penerimaan via kontainer pengiriman (Import / Raw Material dingin) yang mewajibkan formulir Berita Acara resmi QA.
+                    </p>
+                  </div>
+
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={hasBeritaAcara}
+                      onChange={(e) => setHasBeritaAcara(e.target.checked)}
+                      className="sr-only peer"
+                      data-testid="toggle-berita-acara"
+                    />
+                    <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                {/* Subform: Informasi Kontainer & Kondisi Sebelum Dibongkar */}
+                {hasBeritaAcara && (
+                  <div className="pt-4 border-t border-blue-100 space-y-4 animate-in fade-in duration-200" data-testid="ba-step1-section">
+                    <div className="text-xs font-bold text-blue-950 uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-blue-600" />
+                      Data Kontainer & Segel (Sebelum Dibongkar)
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* No. Container */}
+                      <div>
+                        <Label className="text-xs font-semibold text-slate-800">
+                          No. Container <span className="text-rose-600 font-bold">*</span>
+                        </Label>
+                        <Input
+                          placeholder="Contoh: TCLU 123456-7"
+                          value={beritaAcara.container_no}
+                          onChange={(e) => updateBeritaAcara("container_no", e.target.value.toUpperCase())}
+                          className="mt-1 font-mono uppercase text-xs"
+                          data-testid="input-ba-container-no"
+                        />
+                      </div>
+
+                      {/* No. Segel */}
+                      <div>
+                        <Label className="text-xs font-semibold text-slate-800">
+                          No. Segel <span className="text-rose-600 font-bold">*</span>
+                        </Label>
+                        <Input
+                          placeholder="Contoh: SEAL-8899120"
+                          value={beritaAcara.seal_no}
+                          onChange={(e) => updateBeritaAcara("seal_no", e.target.value)}
+                          className="mt-1 font-mono text-xs"
+                          data-testid="input-ba-seal-no"
+                        />
+                      </div>
+
+                      {/* Kondisi Segel */}
+                      <div>
+                        <Label className="text-xs font-semibold text-slate-800">Kondisi Segel</Label>
+                        <select
+                          value={beritaAcara.seal_condition}
+                          onChange={(e) => updateBeritaAcara("seal_condition", e.target.value)}
+                          className="mt-1 flex h-9 w-full rounded-md border border-input bg-white px-3 py-1 text-xs shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          data-testid="select-ba-seal-condition"
+                        >
+                          <option value="Baik / Utuh">Baik / Utuh</option>
+                          <option value="Rusak / Putus">Rusak / Putus</option>
+                          <option value="Tidak Ada Segel">Tidak Ada Segel</option>
+                        </select>
+                      </div>
+
+                      {/* Suhu Container Category & Temp */}
+                      <div>
+                        <Label className="text-xs font-semibold text-slate-800">Suhu Container (*)</Label>
+                        <div className="mt-1 flex items-center gap-2">
+                          <div className="grid grid-cols-3 gap-1 flex-1">
+                            {["Dry", "Chiller", "Frozen"].map((type) => (
+                              <button
+                                key={type}
+                                type="button"
+                                onClick={() => updateBeritaAcara("container_temp_type", type)}
+                                className={`py-1.5 text-xs font-semibold rounded border transition-all ${
+                                  beritaAcara.container_temp_type === type
+                                    ? "bg-blue-600 text-white border-blue-600 shadow-xs"
+                                    : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                                }`}
+                              >
+                                {type}
+                              </button>
+                            ))}
+                          </div>
+                          <Input
+                            placeholder="°C (misal: -20)"
+                            value={beritaAcara.temp_celsius}
+                            onChange={(e) => updateBeritaAcara("temp_celsius", e.target.value)}
+                            className="w-24 text-xs font-mono"
+                            data-testid="input-ba-temp-celsius"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section: Kondisi Fisik Container (1. Sebelum dibongkar) */}
+                    <div className="rounded-xl border border-slate-200 bg-white p-3.5 space-y-3">
+                      <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wide">
+                        Kondisi Fisik Container: 1. Sebelum Dibongkar
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        <div>
+                          <Label className="text-[11px] text-slate-600 font-medium">Lantai Container</Label>
+                          <select
+                            value={beritaAcara.floor_before}
+                            onChange={(e) => updateBeritaAcara("floor_before", e.target.value)}
+                            className="mt-1 flex h-8 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs"
+                          >
+                            <option value="Rata, tidak ditemukan kebocoran, bersih, tidak berminyak">
+                              Rata, tidak ditemukan kebocoran, bersih, tidak berminyak
+                            </option>
+                            <option value="Tidak rata, rusak, ada bolong atau sobek, kotor, berminyak">
+                              Tidak rata, rusak, ada bolong atau sobek, kotor, berminyak
+                            </option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <Label className="text-[11px] text-slate-600 font-medium">Dinding Cont Dalam</Label>
+                          <select
+                            value={beritaAcara.wall_before}
+                            onChange={(e) => updateBeritaAcara("wall_before", e.target.value)}
+                            className="mt-1 flex h-8 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs"
+                          >
+                            <option value="Tidak penyok, tidak baret, tidak bolong">
+                              Tidak penyok, tidak baret, tidak bolong
+                            </option>
+                            <option value="Penyok, baret, bolong">
+                              Penyok, baret, bolong
+                            </option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -728,6 +938,196 @@ export default function TallyEditor() {
               </table>
             </div>
           </div>
+
+          {/* Review & Evaluasi Berita Acara Penerimaan Import (Jika Aktif) */}
+          {hasBeritaAcara && (
+            <div className="rounded-xl border border-blue-200 bg-blue-50/30 p-4 sm:p-5 space-y-4" data-testid="ba-step3-section">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 border-b border-blue-200/60 pb-2">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-blue-700" />
+                  <span className="text-xs font-bold text-[#0B2149] uppercase tracking-wider">
+                    Form Berita Acara Penerimaan Kontainer Import
+                  </span>
+                  <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-mono font-bold text-blue-900 border border-blue-200">
+                    SOP.WH-D.02
+                  </span>
+                </div>
+                <span className="text-[11px] font-semibold text-slate-500">Evaluasi Kondisi Setelah Pembongkaran</span>
+              </div>
+
+              {/* Summary Header BA */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                  <span className="text-[10px] text-slate-500 block uppercase font-semibold">No. Container</span>
+                  <span className="font-mono font-bold text-blue-950">{beritaAcara.container_no || "-"}</span>
+                </div>
+                <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                  <span className="text-[10px] text-slate-500 block uppercase font-semibold">No. Segel</span>
+                  <span className="font-mono font-bold text-slate-800">{beritaAcara.seal_no || "-"}</span>
+                </div>
+                <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                  <span className="text-[10px] text-slate-500 block uppercase font-semibold">Kondisi Segel</span>
+                  <span className="font-medium text-slate-800">{beritaAcara.seal_condition || "-"}</span>
+                </div>
+                <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                  <span className="text-[10px] text-slate-500 block uppercase font-semibold">Suhu Container</span>
+                  <span className="font-medium text-slate-800">{beritaAcara.container_temp_type} {beritaAcara.temp_celsius ? `(${beritaAcara.temp_celsius}°C)` : ""}</span>
+                </div>
+              </div>
+
+              {/* 2. Setelah isi container dibongkar */}
+              <div className="rounded-lg bg-white p-3.5 border border-slate-200 space-y-3">
+                <div className="text-[11px] font-bold text-slate-800 uppercase tracking-wide">
+                  Kondisi Fisik Container: 2. Setelah Isi Container Dibongkar
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <Label className="text-[11px] text-slate-600 font-medium">Lantai Container</Label>
+                    <select
+                      value={beritaAcara.floor_after}
+                      onChange={(e) => updateBeritaAcara("floor_after", e.target.value)}
+                      className="mt-1 flex h-8 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs"
+                    >
+                      <option value="Rata, tidak ditemukan kebocoran">Rata, tidak ditemukan kebocoran</option>
+                      <option value="Tidak rata, rusak, ada bolong atau sobek">Tidak rata, rusak, ada bolong atau sobek</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="text-[11px] text-slate-600 font-medium">Dinding Cont Dalam</Label>
+                    <select
+                      value={beritaAcara.wall_after}
+                      onChange={(e) => updateBeritaAcara("wall_after", e.target.value)}
+                      className="mt-1 flex h-8 w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs"
+                    >
+                      <option value="Tidak penyok, tidak baret, tidak bolong">Tidak penyok, tidak baret, tidak bolong</option>
+                      <option value="Penyok, baret, bolong">Penyok, baret, bolong</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Kondisi Isi Barang Yang Dikirim */}
+              <div className="rounded-lg bg-white p-3.5 border border-slate-200 space-y-3">
+                <div className="text-[11px] font-bold text-slate-800 uppercase tracking-wide">
+                  Kondisi Isi Barang Yang Dikirim
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  {/* Point 1: Penyusunan barang */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-slate-800">1. Penyusunan barang di dalam container:</span>
+                      <div className="flex gap-3">
+                        {["Baik", "Roboh"].map((val) => (
+                          <label key={val} className="inline-flex items-center gap-1 cursor-pointer font-medium text-slate-700">
+                            <input
+                              type="radio"
+                              name="cargo_arrangement"
+                              value={val}
+                              checked={beritaAcara.cargo_arrangement === val}
+                              onChange={(e) => updateBeritaAcara("cargo_arrangement", e.target.value)}
+                              className="accent-blue-600"
+                            />
+                            <span>{val}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <Input
+                      placeholder="Jelaskan kondisi penyusunan (misal: Tersusun rapi di atas palet)"
+                      value={beritaAcara.cargo_arrangement_notes}
+                      onChange={(e) => updateBeritaAcara("cargo_arrangement_notes", e.target.value)}
+                      className="h-8 text-xs bg-slate-50/50"
+                    />
+                  </div>
+
+                  {/* Point 2: Fisik barang */}
+                  <div className="space-y-1 pt-2 border-t border-slate-100">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-slate-800">2. Fisik barang dalam kondisi baik (tidak pecah/bocor):</span>
+                      <div className="flex gap-3">
+                        {[
+                          { key: "Baik, tidak ditemukan pecah / bocor", label: "Baik" },
+                          { key: "Pecah / bocor / rusak", label: "Rusak / Bocor" }
+                        ].map((item) => (
+                          <label key={item.key} className="inline-flex items-center gap-1 cursor-pointer font-medium text-slate-700">
+                            <input
+                              type="radio"
+                              name="cargo_condition"
+                              value={item.key}
+                              checked={beritaAcara.cargo_condition === item.key}
+                              onChange={(e) => updateBeritaAcara("cargo_condition", e.target.value)}
+                              className="accent-blue-600"
+                            />
+                            <span>{item.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <Input
+                      placeholder="Jelaskan kondisi fisik barang (misal: Kemasan utuh, tidak basah)"
+                      value={beritaAcara.cargo_condition_notes}
+                      onChange={(e) => updateBeritaAcara("cargo_condition_notes", e.target.value)}
+                      className="h-8 text-xs bg-slate-50/50"
+                    />
+                  </div>
+
+                  {/* Point 3: Jumlah fisik barang sesuai */}
+                  <div className="space-y-1 pt-2 border-t border-slate-100">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-slate-800">3. Jumlah fisik barang sesuai dengan Packing List:</span>
+                      <div className="flex gap-3">
+                        {[
+                          { key: "Sesuai dengan Packing List", label: "Sesuai" },
+                          { key: "Terdapat Selisih", label: "Selisih" }
+                        ].map((item) => (
+                          <label key={item.key} className="inline-flex items-center gap-1 cursor-pointer font-medium text-slate-700">
+                            <input
+                              type="radio"
+                              name="cargo_qty_match"
+                              value={item.key}
+                              checked={beritaAcara.cargo_qty_match === item.key}
+                              onChange={(e) => updateBeritaAcara("cargo_qty_match", e.target.value)}
+                              className="accent-blue-600"
+                            />
+                            <span>{item.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <Input
+                      placeholder="Jelaskan jumlah fisik vs packing list (misal: 100% cocok)"
+                      value={beritaAcara.cargo_qty_notes}
+                      onChange={(e) => updateBeritaAcara("cargo_qty_notes", e.target.value)}
+                      className="h-8 text-xs bg-slate-50/50"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Legalitas & Driver */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-slate-50 p-3 rounded-lg border border-slate-200">
+                <div>
+                  <Label className="text-[11px] font-semibold text-slate-700">Nama Driver Pengiriman (Ekspedisi)</Label>
+                  <Input
+                    placeholder="Nama supir truk pengantar untuk tanda tangan"
+                    value={beritaAcara.driver_name}
+                    onChange={(e) => updateBeritaAcara("driver_name", e.target.value)}
+                    className="mt-1 h-8 text-xs bg-white"
+                    data-testid="input-ba-driver-name"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[11px] font-semibold text-slate-700">Lokasi Penerimaan (Plant)</Label>
+                  <Input
+                    value={beritaAcara.location}
+                    disabled
+                    className="mt-1 h-8 text-xs bg-slate-100 text-slate-700 font-semibold"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Action Submission Buttons */}
           <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

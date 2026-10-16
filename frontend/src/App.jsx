@@ -9,6 +9,7 @@ import TallyList from "@/pages/TallyList";
 import TallyEditor from "@/pages/TallyEditor";
 import TallyDetail from "@/pages/TallyDetail";
 import TallyPrint from "@/pages/TallyPrint";
+import BeritaAcaraPrint from "@/pages/BeritaAcaraPrint";
 import MasterData from "@/pages/MasterData";
 import MasterUpload from "@/pages/MasterUpload";
 import MasterSupplier from "@/pages/MasterSupplier";
@@ -47,6 +48,7 @@ function App() {
         <Routes>
           <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
           <Route path="/tally/:id/print" element={<Protected><TallyPrint /></Protected>} />
+          <Route path="/tally/:id/print-ba" element={<Protected><BeritaAcaraPrint /></Protected>} />
           <Route path="/" element={<Protected><Layout /></Protected>}>
             <Route index element={<Dashboard />} />
             <Route path="tally" element={<TallyList />} />
