@@ -1,7 +1,15 @@
 -- ===============================================================
--- TALLY SHEET - SUPABASE POSTGRESQL SCHEMA & SEED DATA
--- Run this script directly in the Supabase SQL Editor
--- Project: https://jooffdovcomgyvvsftmf.supabase.co
+-- TALLY SHEET - SUPABASE POSTGRESQL SCHEMA & PRODUCTION SETUP
+-- Project URL: https://jooffdovcomgyvvsftmf.supabase.co
+--
+-- PANDUAN EKSEKUSI DI SUPABASE:
+-- 1. Buka Dashboard Supabase: https://supabase.com/dashboard/project/jooffdovcomgyvvsftmf
+-- 2. Masuk ke menu "SQL Editor" (ikon query di sidebar kiri)
+-- 3. Klik "+ New query"
+-- 4. Salin seluruh isi file ini (Ctrl+A, Ctrl+C), lalu paste ke editor
+-- 5. Klik tombol "Run" (atau Ctrl+Enter)
+--
+-- Script ini IDEMPOTENT (aman dijalankan berulang kali tanpa merusak data).
 -- ===============================================================
 
 -- 1. USERS TABLE
@@ -186,12 +194,21 @@ CREATE TABLE IF NOT EXISTS public.suppliers (
     city TEXT DEFAULT '',
     country TEXT DEFAULT '',
     postal_code TEXT DEFAULT '',
+    purchasing_org TEXT DEFAULT '',
     purch_org TEXT DEFAULT '',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
 );
 CREATE INDEX IF NOT EXISTS idx_suppliers_code ON public.suppliers(code);
 CREATE INDEX IF NOT EXISTS idx_suppliers_name ON public.suppliers(name);
-CREATE INDEX IF NOT EXISTS idx_tally_items_batch_fisik ON public.tally_items(batch_fisik);
+CREATE INDEX IF NOT EXISTS idx_suppliers_active ON public.suppliers(active);
+
+-- Migration support for existing suppliers table
+ALTER TABLE public.suppliers ADD COLUMN IF NOT EXISTS purchasing_org TEXT DEFAULT '';
+ALTER TABLE public.suppliers ADD COLUMN IF NOT EXISTS purch_org TEXT DEFAULT '';
+ALTER TABLE public.suppliers ADD COLUMN IF NOT EXISTS active INTEGER DEFAULT 1;
+ALTER TABLE public.suppliers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT timezone('utc', now());
 
 -- 8. TALLY HISTORY TABLE
 CREATE TABLE IF NOT EXISTS public.tally_history (
@@ -242,31 +259,31 @@ ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.suppliers ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Full access users" ON public.users;
-CREATE POLICY "Full access users" ON public.users FOR ALL USING (true);
+CREATE POLICY "Full access users" ON public.users FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Full access settings" ON public.settings;
-CREATE POLICY "Full access settings" ON public.settings FOR ALL USING (true);
+CREATE POLICY "Full access settings" ON public.settings FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Full access master_versions" ON public.master_versions;
-CREATE POLICY "Full access master_versions" ON public.master_versions FOR ALL USING (true);
+CREATE POLICY "Full access master_versions" ON public.master_versions FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Full access materials" ON public.materials;
-CREATE POLICY "Full access materials" ON public.materials FOR ALL USING (true);
+CREATE POLICY "Full access materials" ON public.materials FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Full access suppliers" ON public.suppliers;
-CREATE POLICY "Full access suppliers" ON public.suppliers FOR ALL USING (true);
+CREATE POLICY "Full access suppliers" ON public.suppliers FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Full access tally_sheets" ON public.tally_sheets;
-CREATE POLICY "Full access tally_sheets" ON public.tally_sheets FOR ALL USING (true);
+CREATE POLICY "Full access tally_sheets" ON public.tally_sheets FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Full access tally_items" ON public.tally_items;
-CREATE POLICY "Full access tally_items" ON public.tally_items FOR ALL USING (true);
+CREATE POLICY "Full access tally_items" ON public.tally_items FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Full access tally_history" ON public.tally_history;
-CREATE POLICY "Full access tally_history" ON public.tally_history FOR ALL USING (true);
+CREATE POLICY "Full access tally_history" ON public.tally_history FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Full access activity_logs" ON public.activity_logs;
-CREATE POLICY "Full access activity_logs" ON public.activity_logs FOR ALL USING (true);
+CREATE POLICY "Full access activity_logs" ON public.activity_logs FOR ALL USING (true) WITH CHECK (true);
 
 -- 10. SEED DATA
 INSERT INTO public.users (id, email, name, password_hash, role, is_pic, active, created_at)
@@ -287,9 +304,23 @@ ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, rol
 INSERT INTO public.users (id, email, name, password_hash, role, is_pic, active, created_at)
 VALUES ('w3333333-3333-4333-8333-333333333333', 'warehouse@tally.com', 'Hendra Admin WH', '4c1e340fbf3c22ca4dd18336c73d8c66b5e57bba40ab2cc90fd071f442dd611b', 'warehouse_admin', 1, 1, '2026-10-15T04:18:33.504198+00:00')
 ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, role = EXCLUDED.role;
-INSERT INTO public.settings (id, required_json, duplicate_rule, updated_at, updated_by_name)
-VALUES ('global', '{"batch_fisik": true, "supplier_batch": true, "expired_date": true, "production_date": true, "pic": true}', 'within_document', '2026-10-15T04:18:33.504003+00:00', 'Ade Iksan Ramdani')
-ON CONFLICT (id) DO UPDATE SET required_json = EXCLUDED.required_json;
+INSERT INTO public.settings (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, updated_at, updated_by_name)
+VALUES (
+    'global',
+    '{"batch_fisik": true, "supplier_batch": true, "expired_date": true, "production_date": true, "pic": true}',
+    'within_document',
+    '["COA Belum Lengkap / Kurang", "Kuantiti Fisik Selisih vs Surat Jalan / PO", "Kualitas Fisik Tidak Sesuai", "Dokumen Surat Jalan Buram / Rusak", "Pemeriksaan Organoleptik / Lab Tertunda", "Lain-lain"]',
+    '{"TALLY_SHEET": {"code": "SOP.WH-D.01", "title": "FORM TALLY SHEET PENERIMAAN MATERIAL", "revision": "01", "effective_date": "01 Januari 2024", "plant": "PT DIAMOND COLD STORAGE - PLANT 2111 (CIBITUNG)"}, "BERITA_ACARA_IMPORT": {"code": "SOP.WH-D.02", "title": "BERITA ACARA PENERIMAAN BARANG IMPORT", "revision": "01", "effective_date": "01 Januari 2024", "plant": "PT DIAMOND COLD STORAGE - PLANT 2111 (CIBITUNG)"}}',
+    timezone('utc', now()),
+    'Ade Iksan Ramdani'
+)
+ON CONFLICT (id) DO UPDATE SET 
+    required_json = EXCLUDED.required_json,
+    duplicate_rule = EXCLUDED.duplicate_rule,
+    hold_categories_json = EXCLUDED.hold_categories_json,
+    qa_documents_json = EXCLUDED.qa_documents_json,
+    updated_at = EXCLUDED.updated_at,
+    updated_by_name = EXCLUDED.updated_by_name;
 INSERT INTO public.master_versions (id, version, filename, mode, uploaded_by, uploaded_by_name, uploaded_at, total_rows, valid_rows, error_rows, inserted, updated, deactivated, active_total)
 VALUES ('1c969d96-3a67-40cc-bf7a-5c02ebda9469', 1, '2515F.XLSX', 'upsert', '0957b49d-67b9-437a-8d63-18cc1274def3', 'Administrator', '2026-10-15T02:55:04.374277+00:00', 1219, 981, 238, 981, 0, 0, 981)
 ON CONFLICT (id) DO NOTHING;
