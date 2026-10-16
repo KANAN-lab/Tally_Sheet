@@ -15,6 +15,7 @@ import MasterSupplier from "@/pages/MasterSupplier";
 import Users from "@/pages/Users";
 import Activity from "@/pages/Activity";
 import Settings from "@/pages/Settings";
+import Reports from "@/pages/Reports";
 
 function Loading() {
   return (
@@ -52,6 +53,7 @@ function App() {
             <Route path="tally/new" element={<TallyEditor />} />
             <Route path="tally/:id" element={<TallyDetail />} />
             <Route path="tally/:id/edit" element={<TallyEditor />} />
+            <Route path="reports" element={<Reports />} />
             <Route path="master" element={<MasterData />} />
             <Route path="master/upload" element={<Navigate to="/master?tab=materials&upload=1" replace />} />
             <Route path="suppliers" element={<Navigate to="/master?tab=suppliers" replace />} />

@@ -1,10 +1,11 @@
 import { NavLink } from "react-router-dom";
-import { Boxes, Building2, ChevronRight, Database, History, LayoutDashboard, Settings, UploadCloud, Users, ClipboardList } from "lucide-react";
+import { Boxes, Building2, ChevronRight, Database, FileSpreadsheet, History, LayoutDashboard, Settings, UploadCloud, Users, ClipboardList } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 export const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true, id: "dashboard" },
   { to: "/tally", label: "Tally Sheet", icon: ClipboardList, id: "tally" },
+  { to: "/reports", label: "Laporan & Audit", icon: FileSpreadsheet, id: "reports" },
   { to: "/master", label: "Master Data", icon: Database, id: "master" },
   { to: "/users", label: "Pengguna", icon: Users, admin: true, id: "users" },
   { to: "/activity", label: "Riwayat Aktivitas", icon: History, admin: true, id: "activity" },

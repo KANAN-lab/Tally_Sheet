@@ -1940,7 +1940,498 @@ def export_tally_sheet(sheet_id: str):
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
 
+# ----------------- ISO 9001 / AUDIT REPORTING ENDPOINTS -----------------
+@app.get("/api/reports/summary")
+def get_reports_summary(
+    start_date: str = "",
+    end_date: str = "",
+    status: str = "all",
+    supplier: str = "",
+    q: str = "",
+    page: int = 1,
+    limit: int = 25,
+    user: dict = Depends(get_current_user)
+):
+    conn = get_db()
+    sync_from_supabase_if_needed(conn)
+
+    where_clauses = ["1=1"]
+    params = []
+
+    if start_date.strip():
+        where_clauses.append("(ts.arrival_date >= ? OR substr(ts.created_at, 1, 10) >= ?)")
+        params.extend([start_date.strip(), start_date.strip()])
+    if end_date.strip():
+        where_clauses.append("(ts.arrival_date <= ? OR substr(ts.created_at, 1, 10) <= ?)")
+        params.extend([end_date.strip(), end_date.strip()])
+    if status.strip() and status != "all":
+        if status == "hold":
+            where_clauses.append("ts.status IN ('hold_admin', 'hold_qc')")
+        elif status == "in_progress":
+            where_clauses.append("ts.status IN ('draft', 'waiting_admin', 'waiting_qc')")
+        elif status == "completed":
+            where_clauses.append("ts.status = 'completed'")
+        else:
+            where_clauses.append("ts.status = ?")
+            params.append(status.strip())
+    if supplier.strip():
+        where_clauses.append("(ts.supplier_code LIKE ? OR ts.supplier_name LIKE ? OR ti.supplier_code LIKE ? OR ti.supplier_name LIKE ?)")
+        s_wild = f"%{supplier.strip()}%"
+        params.extend([s_wild, s_wild, s_wild, s_wild])
+    if q.strip():
+        q_wild = f"%{q.strip()}%"
+        where_clauses.append("(ts.doc_no LIKE ? OR ts.delivery_note_no LIKE ? OR ts.po_no LIKE ? OR ts.truck_plate LIKE ? OR ti.material_code LIKE ? OR ti.material_name LIKE ? OR ti.batch_fisik LIKE ?)")
+        params.extend([q_wild, q_wild, q_wild, q_wild, q_wild, q_wild, q_wild])
+
+    where_str = " AND ".join(where_clauses)
+
+    kpi_query = f"""
+        SELECT 
+            count(DISTINCT ts.id) as total_docs,
+            count(ti.id) as total_items,
+            coalesce(sum(ti.qty), 0) as total_qty,
+            count(DISTINCT CASE WHEN ts.status = 'completed' THEN ts.id END) as completed_docs,
+            count(DISTINCT CASE WHEN ts.status IN ('hold_admin', 'hold_qc') THEN ts.id END) as hold_docs,
+            count(DISTINCT CASE WHEN ts.status IN ('draft', 'waiting_admin', 'waiting_qc') THEN ts.id END) as in_progress_docs,
+            count(DISTINCT CASE WHEN ts.status = 'cancelled' THEN ts.id END) as cancelled_docs
+        FROM tally_sheets ts
+        LEFT JOIN tally_items ti ON ts.id = ti.sheet_id
+        WHERE {where_str}
+    """
+    kpi_row = conn.execute(kpi_query, params).fetchone()
+    total_docs = kpi_row["total_docs"] or 0
+    completed_docs = kpi_row["completed_docs"] or 0
+    first_pass_yield = round((completed_docs / total_docs * 100), 1) if total_docs > 0 else 100.0
+
+    kpi = {
+        "total_docs": total_docs,
+        "total_items": kpi_row["total_items"] or 0,
+        "total_qty": round(float(kpi_row["total_qty"] or 0), 2),
+        "completed_docs": completed_docs,
+        "hold_docs": kpi_row["hold_docs"] or 0,
+        "in_progress_docs": kpi_row["in_progress_docs"] or 0,
+        "cancelled_docs": kpi_row["cancelled_docs"] or 0,
+        "first_pass_yield": first_pass_yield
+    }
+
+    count_items_query = f"""
+        SELECT count(ti.id)
+        FROM tally_sheets ts
+        JOIN tally_items ti ON ts.id = ti.sheet_id
+        WHERE {where_str}
+    """
+    total_items = conn.execute(count_items_query, params).fetchone()[0]
+
+    offset = (page - 1) * limit
+    items_query = f"""
+        SELECT 
+            ti.id, ti.sheet_id, ti.seq, ti.material_code, ti.material_name, ti.uom, ti.qty,
+            ti.supplier_code, ti.supplier_name, ti.batch_fisik, ti.supplier_batch,
+            ti.expired_date, ti.production_date, ti.pic_name,
+            ts.doc_no, ts.delivery_note_no, ts.po_no, ts.truck_plate, ts.arrival_date,
+            ts.status, ts.created_by_name, ts.updated_by_name, ts.qc_by_name, ts.qc_at,
+            ts.pending_category, ts.pending_reason, ts.created_at
+        FROM tally_sheets ts
+        JOIN tally_items ti ON ts.id = ti.sheet_id
+        WHERE {where_str}
+        ORDER BY ts.arrival_date DESC, ts.created_at DESC, ti.seq ASC
+        LIMIT ? OFFSET ?
+    """
+    rows = conn.execute(items_query, params + [limit, offset]).fetchall()
+    conn.close()
+
+    items = [dict(r) for r in rows]
+    return {
+        "kpi": kpi,
+        "items": items,
+        "total": total_items,
+        "page": page,
+        "limit": limit
+    }
+
+@app.get("/api/reports/export-excel")
+def export_reports_excel(
+    start_date: str = "",
+    end_date: str = "",
+    status: str = "all",
+    supplier: str = "",
+    q: str = "",
+    user: dict = Depends(get_current_user)
+):
+    conn = get_db()
+    sync_from_supabase_if_needed(conn)
+
+    where_clauses = ["1=1"]
+    params = []
+
+    if start_date.strip():
+        where_clauses.append("(ts.arrival_date >= ? OR substr(ts.created_at, 1, 10) >= ?)")
+        params.extend([start_date.strip(), start_date.strip()])
+    if end_date.strip():
+        where_clauses.append("(ts.arrival_date <= ? OR substr(ts.created_at, 1, 10) <= ?)")
+        params.extend([end_date.strip(), end_date.strip()])
+    if status.strip() and status != "all":
+        if status == "hold":
+            where_clauses.append("ts.status IN ('hold_admin', 'hold_qc')")
+        elif status == "in_progress":
+            where_clauses.append("ts.status IN ('draft', 'waiting_admin', 'waiting_qc')")
+        elif status == "completed":
+            where_clauses.append("ts.status = 'completed'")
+        else:
+            where_clauses.append("ts.status = ?")
+            params.append(status.strip())
+    if supplier.strip():
+        where_clauses.append("(ts.supplier_code LIKE ? OR ts.supplier_name LIKE ? OR ti.supplier_code LIKE ? OR ti.supplier_name LIKE ?)")
+        s_wild = f"%{supplier.strip()}%"
+        params.extend([s_wild, s_wild, s_wild, s_wild])
+    if q.strip():
+        q_wild = f"%{q.strip()}%"
+        where_clauses.append("(ts.doc_no LIKE ? OR ts.delivery_note_no LIKE ? OR ts.po_no LIKE ? OR ts.truck_plate LIKE ? OR ti.material_code LIKE ? OR ti.material_name LIKE ? OR ti.batch_fisik LIKE ?)")
+        params.extend([q_wild, q_wild, q_wild, q_wild, q_wild, q_wild, q_wild])
+
+    where_str = " AND ".join(where_clauses)
+
+    items_query = f"""
+        SELECT 
+            ti.id, ti.sheet_id, ti.seq, ti.material_code, ti.material_name, ti.uom, ti.qty,
+            ti.supplier_code, ti.supplier_name, ti.batch_fisik, ti.supplier_batch,
+            ti.expired_date, ti.production_date, ti.pic_name,
+            ts.doc_no, ts.delivery_note_no, ts.po_no, ts.truck_plate, ts.arrival_date,
+            ts.status, ts.created_by_name, ts.updated_by_name, ts.qc_by_name, ts.qc_at,
+            ts.pending_category, ts.pending_reason, ts.created_at
+        FROM tally_sheets ts
+        JOIN tally_items ti ON ts.id = ti.sheet_id
+        WHERE {where_str}
+        ORDER BY ts.arrival_date DESC, ts.created_at DESC, ti.seq ASC
+    """
+    rows = conn.execute(items_query, params).fetchall()
+
+    kpi_query = f"""
+        SELECT 
+            count(DISTINCT ts.id) as total_docs,
+            count(ti.id) as total_items,
+            coalesce(sum(ti.qty), 0) as total_qty,
+            count(DISTINCT CASE WHEN ts.status = 'completed' THEN ts.id END) as completed_docs,
+            count(DISTINCT CASE WHEN ts.status IN ('hold_admin', 'hold_qc') THEN ts.id END) as hold_docs,
+            count(DISTINCT CASE WHEN ts.status IN ('draft', 'waiting_admin', 'waiting_qc') THEN ts.id END) as in_progress_docs,
+            count(DISTINCT CASE WHEN ts.status = 'cancelled' THEN ts.id END) as cancelled_docs
+        FROM tally_sheets ts
+        LEFT JOIN tally_items ti ON ts.id = ti.sheet_id
+        WHERE {where_str}
+    """
+    kpi_row = conn.execute(kpi_query, params).fetchone()
+    conn.close()
+
+    total_docs = kpi_row["total_docs"] or 0
+    completed_docs = kpi_row["completed_docs"] or 0
+    hold_docs = kpi_row["hold_docs"] or 0
+    first_pass_yield = round((completed_docs / total_docs * 100), 1) if total_docs > 0 else 100.0
+
+    wb = openpyxl.Workbook()
+
+    navy_header_fill = PatternFill(start_color="0B2149", end_color="0B2149", fill_type="solid")
+    maroon_header_fill = PatternFill(start_color="7F1D1D", end_color="7F1D1D", fill_type="solid")
+    ice_blue_fill = PatternFill(start_color="EFF6FF", end_color="EFF6FF", fill_type="solid")
+    zebra_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+    white_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+    
+    white_bold_font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+    navy_title_font = Font(name="Calibri", size=15, bold=True, color="0B2149")
+    bold_font = Font(name="Calibri", size=10, bold=True, color="0F172A")
+    regular_font = Font(name="Calibri", size=10, color="0F172A")
+    small_italic_font = Font(name="Calibri", size=9, italic=True, color="64748B")
+    
+    border_thin = Border(
+        left=Side(style='thin', color='CBD5E1'),
+        right=Side(style='thin', color='CBD5E1'),
+        top=Side(style='thin', color='CBD5E1'),
+        bottom=Side(style='thin', color='CBD5E1')
+    )
+    border_total = Border(
+        top=Side(style='thin', color='0B2149'),
+        bottom=Side(style='double', color='0B2149')
+    )
+
+    now_str = datetime.datetime.now().strftime("%d-%m-%Y %H:%M WIB")
+    period_str = f"{start_date or 'Awal'} s/d {end_date or 'Sekarang'}"
+
+    status_label_map = {
+        "completed": "SELESAI (STOCK TER-UU)",
+        "hold_admin": "HOLD ADMIN WH",
+        "hold_qc": "HOLD QC INSPECTOR",
+        "waiting_qc": "MENUNGGU QC",
+        "waiting_admin": "MENUNGGU ADMIN WH",
+        "draft": "DRAFT CHECKER",
+        "cancelled": "DIBATALKAN"
+    }
+
+    # ------------------ SHEET 1: RINGKASAN AUDIT ISO ------------------
+    ws1 = wb.active
+    ws1.title = "Ringkasan Audit ISO"
+    ws1.views.sheetView[0].showGridLines = True
+
+    ws1["A1"] = "PT MATERIAL TALLY HUB INDONESIA"
+    ws1["A1"].font = Font(name="Calibri", size=11, bold=True, color="1E3A8A")
+    ws1["A2"] = "LAPORAN AUDIT & REKAPITULASI PENERIMAAN MATERIAL INCOMING"
+    ws1["A2"].font = navy_title_font
+    ws1["A3"] = "Standar Kepatuhan: ISO 9001:2015 Clause 8.4 (Control of Externally Provided Processes) & Clause 8.6 (Release of Products)"
+    ws1["A3"].font = small_italic_font
+
+    ws1["A5"] = "Nomor Dokumen:"
+    ws1["B5"] = "FORM-WHS-ISO-008 Rev. 02"
+    ws1["D5"] = "Tanggal Ditarik:"
+    ws1["E5"] = now_str
+    
+    ws1["A6"] = "Klasifikasi:"
+    ws1["B6"] = "Confidential / Official Audit Record"
+    ws1["D6"] = "Ditarik Oleh:"
+    ws1["E6"] = f"{user.get('name', 'Admin')} ({user.get('role', 'admin')})"
+
+    ws1["A7"] = "Periode Kedatangan:"
+    ws1["B7"] = period_str
+    ws1["D7"] = "Filter Status:"
+    ws1["E7"] = status.upper()
+
+    for r in range(5, 8):
+        ws1[f"A{r}"].font = bold_font
+        ws1[f"B{r}"].font = regular_font
+        ws1[f"D{r}"].font = bold_font
+        ws1[f"E{r}"].font = regular_font
+        for c in ["A", "B", "D", "E"]:
+            ws1[f"{c}{r}"].fill = ice_blue_fill
+            ws1[f"{c}{r}"].border = border_thin
+
+    ws1["A9"] = "RINGKASAN METRIK AUDIT MUTU (QUALITY AUDIT SUMMARY)"
+    ws1["A9"].font = Font(name="Calibri", size=11, bold=True, color="0B2149")
+
+    kpi_headers = ["Parameter Metrik", "Nilai", "Satuan", "Standar / Keterangan"]
+    for idx, h in enumerate(kpi_headers, start=1):
+        cell = ws1.cell(row=10, column=idx, value=h)
+        cell.font = white_bold_font
+        cell.fill = navy_header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = border_thin
+
+    kpi_data = [
+        ("Total Dokumen Kedatangan (Surat Jalan)", total_docs, "Dokumen", "Total armada/SJ masuk tercatat"),
+        ("Total Baris Material Diterima", kpi_row["total_items"] or 0, "Baris", "Total varian material & batch"),
+        ("Total Kuantitas Fisik Masuk", float(kpi_row["total_qty"] or 0), "Unit/Qty", "Akumulasi kuantiti seluruh material"),
+        ("First-Pass Quality Yield (Tingkat Kelolosan)", f"{first_pass_yield}%", "Persen", "Target ISO: >= 98.0% Lolos Langsung"),
+        ("Dokumen Selesai (Stock Ter-UU)", completed_docs, "Dokumen", "Resmi lolos verifikasi fisik & uji mutu QC"),
+        ("Dokumen Ditahan (Hold Admin / QC)", hold_docs, "Dokumen", "Mengalami deviasi / perlu perbaikan"),
+        ("Dokumen Dalam Proses Antrean", kpi_row["in_progress_docs"] or 0, "Dokumen", "Sedang verifikasi Admin WH atau inspeksi QC")
+    ]
+
+    for row_idx, (param, val, unit, desc) in enumerate(kpi_data, start=11):
+        ws1.cell(row=row_idx, column=1, value=param).font = regular_font
+        c_val = ws1.cell(row=row_idx, column=2, value=val)
+        c_val.font = bold_font
+        c_val.alignment = Alignment(horizontal="right")
+        if isinstance(val, (int, float)):
+            c_val.number_format = "#,##0.00" if isinstance(val, float) else "#,##0"
+        c_unit = ws1.cell(row=row_idx, column=3, value=unit)
+        c_unit.font = regular_font
+        c_unit.alignment = Alignment(horizontal="center")
+        ws1.cell(row=row_idx, column=4, value=desc).font = small_italic_font
+
+        fill_c = zebra_fill if row_idx % 2 == 0 else white_fill
+        for c in range(1, 5):
+            ws1.cell(row=row_idx, column=c).border = border_thin
+            ws1.cell(row=row_idx, column=c).fill = fill_c
+
+    # ISO Sign-off Table
+    ws1.cell(row=20, column=1, value="LEMBAR PENGESAHAN DOKUMEN AUDIT (ISO 9001 SIGN-OFF)").font = Font(name="Calibri", size=11, bold=True, color="0B2149")
+    
+    sign_headers = ["Dibuat Oleh (Checker / Operator)", "Diperiksa Oleh (Warehouse Supervisor)", "Diverifikasi Mutu (QC / QA Manager)"]
+    ws1.merge_cells("A21:B21")
+    ws1.merge_cells("C21:D21")
+    ws1.merge_cells("E21:F21")
+    ws1["A21"] = sign_headers[0]
+    ws1["C21"] = sign_headers[1]
+    ws1["E21"] = sign_headers[2]
+    for c in ["A21", "B21", "C21", "D21", "E21", "F21"]:
+        ws1[c].font = white_bold_font
+        ws1[c].fill = navy_header_fill
+        ws1[c].alignment = Alignment(horizontal="center")
+        ws1[c].border = border_thin
+
+    for r in range(22, 26):
+        ws1.merge_cells(f"A{r}:B{r}")
+        ws1.merge_cells(f"C{r}:D{r}")
+        ws1.merge_cells(f"E{r}:F{r}")
+        for col_name in ["A", "B", "C", "D", "E", "F"]:
+            ws1[f"{col_name}{r}"].border = border_thin
+
+    ws1.merge_cells("A26:B26")
+    ws1.merge_cells("C26:D26")
+    ws1.merge_cells("E26:F26")
+    ws1["A26"] = "Nama: __________________\nTgl:   __________________"
+    ws1["C26"] = "Nama: __________________\nTgl:   __________________"
+    ws1["E26"] = "Nama: __________________\nTgl:   __________________"
+    for c in ["A26", "B26", "C26", "D26", "E26", "F26"]:
+        ws1[c].font = regular_font
+        ws1[c].alignment = Alignment(wrap_text=True)
+        ws1[c].border = border_thin
+
+    ws1.column_dimensions["A"].width = 38
+    ws1.column_dimensions["B"].width = 24
+    ws1.column_dimensions["C"].width = 16
+    ws1.column_dimensions["D"].width = 32
+    ws1.column_dimensions["E"].width = 28
+    ws1.column_dimensions["F"].width = 28
+
+    # ------------------ SHEET 2: DETAIL KETERTELUSURAN MATERIAL ------------------
+    ws2 = wb.create_sheet(title="Detail Ketertelusuran")
+    ws2.views.sheetView[0].showGridLines = True
+
+    headers_ws2 = [
+        "No.", "Tgl Kedatangan", "No. Tally", "No. Surat Jalan", "No. PO SAP", "No. Polisi Armada",
+        "Kode Vendor", "Nama Vendor / Supplier", "Kode Material", "Deskripsi Material",
+        "Batch Fisik", "Batch Supplier", "Tgl Produksi", "Tgl Expired",
+        "Qty Fisik", "UOM", "Status Mutu", "Checker", "Admin WH", "QC Approver", "Tgl Rilis Mutu"
+    ]
+
+    for col_idx, h in enumerate(headers_ws2, start=1):
+        cell = ws2.cell(row=1, column=col_idx, value=h)
+        cell.font = white_bold_font
+        cell.fill = navy_header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = border_thin
+
+    data_start_row = 2
+    for idx, r in enumerate(rows, start=1):
+        curr_row = data_start_row + idx - 1
+        qty_num = float(r["qty"] or 0)
+        st_text = status_label_map.get(r["status"], r["status"].upper())
+        qc_time = (r["qc_at"] or "")[:16].replace("T", " ") if r["qc_at"] else "-"
+
+        ws2.cell(row=curr_row, column=1, value=idx).alignment = Alignment(horizontal="center")
+        ws2.cell(row=curr_row, column=2, value=r["arrival_date"] or "").alignment = Alignment(horizontal="center")
+        ws2.cell(row=curr_row, column=3, value=r["doc_no"]).alignment = Alignment(horizontal="center")
+        ws2.cell(row=curr_row, column=4, value=r["delivery_note_no"] or "-").alignment = Alignment(horizontal="center")
+        ws2.cell(row=curr_row, column=5, value=r["po_no"] or "-").alignment = Alignment(horizontal="center")
+        ws2.cell(row=curr_row, column=6, value=r["truck_plate"] or "-").alignment = Alignment(horizontal="center")
+        ws2.cell(row=curr_row, column=7, value=r["supplier_code"] or "-").alignment = Alignment(horizontal="center")
+        ws2.cell(row=curr_row, column=8, value=r["supplier_name"] or "-")
+        ws2.cell(row=curr_row, column=9, value=r["material_code"]).alignment = Alignment(horizontal="center")
+        ws2.cell(row=curr_row, column=10, value=r["material_name"])
+        ws2.cell(row=curr_row, column=11, value=r["batch_fisik"] or "-").alignment = Alignment(horizontal="center")
+        ws2.cell(row=curr_row, column=12, value=r["supplier_batch"] or "-").alignment = Alignment(horizontal="center")
+        ws2.cell(row=curr_row, column=13, value=r["production_date"] or "-").alignment = Alignment(horizontal="center")
+        ws2.cell(row=curr_row, column=14, value=r["expired_date"] or "-").alignment = Alignment(horizontal="center")
+        
+        c_qty = ws2.cell(row=curr_row, column=15, value=qty_num)
+        c_qty.number_format = "#,##0.00"
+        c_qty.alignment = Alignment(horizontal="right")
+        
+        ws2.cell(row=curr_row, column=16, value=r["uom"] or "").alignment = Alignment(horizontal="center")
+        
+        c_stat = ws2.cell(row=curr_row, column=17, value=st_text)
+        c_stat.alignment = Alignment(horizontal="center")
+        c_stat.font = Font(name="Calibri", size=9, bold=True, color="047857" if r["status"] == "completed" else ("B91C1C" if "hold" in r["status"] else "1E3A8A"))
+
+        ws2.cell(row=curr_row, column=18, value=r["pic_name"] or r["created_by_name"] or "-")
+        ws2.cell(row=curr_row, column=19, value=r["updated_by_name"] or "-")
+        ws2.cell(row=curr_row, column=20, value=r["qc_by_name"] or "-")
+        ws2.cell(row=curr_row, column=21, value=qc_time).alignment = Alignment(horizontal="center")
+
+        row_fill = zebra_fill if idx % 2 == 0 else white_fill
+        for c in range(1, 22):
+            cell = ws2.cell(row=curr_row, column=c)
+            cell.border = border_thin
+            if c != 17:
+                cell.font = regular_font
+            cell.fill = row_fill
+
+    total_row_idx = data_start_row + len(rows)
+    ws2.cell(row=total_row_idx, column=1, value="TOTAL KUANTITAS").font = bold_font
+    ws2.merge_cells(start_row=total_row_idx, start_column=1, end_row=total_row_idx, end_column=14)
+    ws2.cell(row=total_row_idx, column=1).alignment = Alignment(horizontal="right")
+    
+    total_qty_cell = ws2.cell(row=total_row_idx, column=15, value=f"=SUM(O2:O{total_row_idx-1})" if len(rows) > 0 else 0)
+    total_qty_cell.font = bold_font
+    total_qty_cell.number_format = "#,##0.00"
+    total_qty_cell.alignment = Alignment(horizontal="right")
+    total_qty_cell.border = border_total
+
+    for c in range(1, 22):
+        ws2.cell(row=total_row_idx, column=c).border = border_total
+
+    ws2.auto_filter.ref = f"A1:U{total_row_idx}"
+    ws2.freeze_panes = "A2"
+
+    ws2_widths = [6, 14, 16, 16, 14, 14, 12, 28, 14, 32, 16, 16, 14, 14, 14, 8, 22, 18, 18, 18, 18]
+    for c_idx, w in enumerate(ws2_widths, start=1):
+        ws2.column_dimensions[openpyxl.utils.get_column_letter(c_idx)].width = w
+
+    # ------------------ SHEET 3: LOG KETIDAKSESUAIAN & PENAHANAN (HOLD) ------------------
+    ws3 = wb.create_sheet(title="Log Ketidaksesuaian & Hold")
+    ws3.views.sheetView[0].showGridLines = True
+
+    ws3["A1"] = "LOG PENANGANAN KETIDAKSESUAIAN MATERIAL & STATUS HOLD"
+    ws3["A1"].font = Font(name="Calibri", size=13, bold=True, color="7F1D1D")
+    ws3["A2"] = "Klausul Kepatuhan: ISO 9001:2015 Clause 8.7 (Control of Nonconforming Outputs)"
+    ws3["A2"].font = small_italic_font
+
+    headers_ws3 = [
+        "No.", "Tgl Kedatangan", "No. Tally", "No. Surat Jalan", "No. PO SAP",
+        "Nama Vendor / Supplier", "Kode & Nama Material", "Kategori Deviasi (Hold)", "Alasan & Uraian Masalah",
+        "Status Terakhir", "Aktor Penanggung Jawab"
+    ]
+    for col_idx, h in enumerate(headers_ws3, start=1):
+        cell = ws3.cell(row=4, column=col_idx, value=h)
+        cell.font = white_bold_font
+        cell.fill = maroon_header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = border_thin
+
+    hold_rows = [r for r in rows if "hold" in r["status"] or r["status"] == "cancelled" or r["pending_category"] or r["pending_reason"]]
+    
+    if not hold_rows:
+        ws3.cell(row=5, column=1, value="Tidak ada catatan deviasi atau penahanan (Hold) pada periode ini. Semua material memenuhi standar mutu.").font = small_italic_font
+        ws3.merge_cells("A5:K5")
+    else:
+        for idx, hr in enumerate(hold_rows, start=1):
+            curr_r = 4 + idx
+            ws3.cell(row=curr_r, column=1, value=idx).alignment = Alignment(horizontal="center")
+            ws3.cell(row=curr_r, column=2, value=hr["arrival_date"] or "").alignment = Alignment(horizontal="center")
+            ws3.cell(row=curr_r, column=3, value=hr["doc_no"]).alignment = Alignment(horizontal="center")
+            ws3.cell(row=curr_r, column=4, value=hr["delivery_note_no"] or "-").alignment = Alignment(horizontal="center")
+            ws3.cell(row=curr_r, column=5, value=hr["po_no"] or "-").alignment = Alignment(horizontal="center")
+            ws3.cell(row=curr_r, column=6, value=hr["supplier_name"] or "-")
+            ws3.cell(row=curr_r, column=7, value=f"{hr['material_code']} - {hr['material_name']}")
+            ws3.cell(row=curr_r, column=8, value=hr["pending_category"] or "Lain-lain").alignment = Alignment(horizontal="center")
+            ws3.cell(row=curr_r, column=9, value=hr["pending_reason"] or "-")
+            ws3.cell(row=curr_r, column=10, value=status_label_map.get(hr["status"], hr["status"].upper())).alignment = Alignment(horizontal="center")
+            ws3.cell(row=curr_r, column=11, value=hr["updated_by_name"] or hr["created_by_name"] or "-")
+
+            row_fill = zebra_fill if idx % 2 == 0 else white_fill
+            for c in range(1, 12):
+                cell = ws3.cell(row=curr_r, column=c)
+                cell.border = border_thin
+                cell.font = regular_font
+                cell.fill = row_fill
+
+    ws3.auto_filter.ref = f"A4:K{max(5, 4 + len(hold_rows))}"
+    ws3.freeze_panes = "A5"
+
+    ws3_widths = [6, 14, 16, 16, 14, 28, 35, 25, 35, 22, 22]
+    for c_idx, w in enumerate(ws3_widths, start=1):
+        ws3.column_dimensions[openpyxl.utils.get_column_letter(c_idx)].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"Laporan_Audit_ISO_Tally_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
 # ----------------- ACTIVITY LOGS -----------------
+
 @app.get("/api/activity")
 def get_activity_logs(q: str = "", entity: str = "", page: int = 1, limit: int = 25, admin: dict = Depends(require_admin)):
     conn = get_db()

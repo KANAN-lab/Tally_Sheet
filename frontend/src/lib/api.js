@@ -50,3 +50,21 @@ export async function downloadExcel(sheetId) {
   URL.revokeObjectURL(url);
   return name;
 }
+
+export async function downloadReportExcel(params = {}) {
+  const query = new URLSearchParams(params).toString();
+  const r = await api.get(`/reports/export-excel?${query}`, { responseType: "blob" });
+  const cd = r.headers["content-disposition"] || "";
+  const m = cd.match(/filename="?([^"]+)"?/);
+  const name = m ? m[1] : `Laporan_Audit_ISO_Tally_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  const url = URL.createObjectURL(r.data);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  return name;
+}
+

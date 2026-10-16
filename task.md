@@ -88,8 +88,12 @@ Dokumen ini melacak status pengerjaan fitur, perbaikan bug, arsitektur sistem, d
 
 Berikut adalah usulan fitur lanjutan yang dapat diaktifkan jika diperlukan oleh operasional lapangan:
 
-- [ ] **Export Rekapitulasi ke Excel (.xlsx)**:
-  - Menghasilkan file Excel rekapitulasi penerimaan barang berkala (harian, mingguan, bulanan) lengkap dengan informasi batch dan vendor.
+- [x] **Menu Laporan & Export Rekapitulasi Audit ISO (.xlsx)**:
+  - Menyediakan menu `/reports` ("Laporan & Audit") berstandar ISO 9001:2015 (Klausul 8.4, 8.6, 8.7) dan GMP.
+  - Menghasilkan file Excel multi-sheet resmi:
+    1. *Sheet 1: Ringkasan Audit ISO* (Metadata dokumen kontrol `FORM-WHS-ISO-008 Rev. 02`, KPI ringkasan, First-Pass Acceptance Rate, lembar pengesahan 3 tanda tangan).
+    2. *Sheet 2: Detail Ketertelusuran Material* (21 kolom audit trail, formula sum kuantiti, auto-filter, zebra styling).
+    3. *Sheet 3: Log Ketidaksesuaian & Status Hold* (Laporan penanganan deviasi ISO Clause 8.7).
 - [ ] **Integrasi Notifikasi Real-time (Webhook / Email / WhatsApp)**:
   - Mengirim notifikasi otomatis ke Admin Warehouse saat Checker meneruskan draf baru, atau ke QC saat material siap uji mutu.
 - [ ] **Barcode / QR Code Scanner**:
