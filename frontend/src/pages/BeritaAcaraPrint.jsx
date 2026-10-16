@@ -35,7 +35,7 @@ export default function BeritaAcaraPrint() {
       {/* Top action bar (hidden on print) */}
       <div className="no-print mx-auto mb-4 flex max-w-[210mm] items-center justify-between gap-3 px-2">
         <span className="text-xs text-slate-600">
-          Pratinjau Cetak A4 · <strong>Berita Acara Penerimaan Barang Import</strong> {sheet.ba_qa_doc_no ? `(${sheet.ba_qa_doc_no})` : ""}
+          Pratinjau Cetak A4 · <strong>{sheet.ba_qa_meta?.title || "Berita Acara Penerimaan Barang Import"}</strong> {sheet.ba_qa_doc_no || sheet.ba_qa_meta?.code ? `(${sheet.ba_qa_doc_no || sheet.ba_qa_meta?.code})` : ""}
         </span>
         <button
           onClick={() => window.print()}
@@ -62,7 +62,7 @@ export default function BeritaAcaraPrint() {
                   PT DIAMOND COLD STORAGE
                 </div>
                 <div className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">
-                  PLANT 2111 · CIBITUNG
+                  {sheet.ba_qa_meta?.plant || "PLANT 2111 · CIBITUNG"}
                 </div>
               </div>
             </div>
@@ -72,7 +72,7 @@ export default function BeritaAcaraPrint() {
               <tbody>
                 <tr className="border-b border-slate-800">
                   <td className="px-2 py-0.5 font-bold bg-slate-100">No. Dokumen QA</td>
-                  <td className="px-2 py-0.5 font-mono font-bold">: {sheet.ba_qa_doc_no || ""}</td>
+                  <td className="px-2 py-0.5 font-mono font-bold">: {sheet.ba_qa_doc_no || sheet.ba_qa_meta?.code || ""}</td>
                 </tr>
                 <tr className="border-b border-slate-800">
                   <td className="px-2 py-0.5 font-semibold text-slate-600">No. Transaksi</td>
@@ -80,7 +80,7 @@ export default function BeritaAcaraPrint() {
                 </tr>
                 <tr>
                   <td className="px-2 py-0.5 font-semibold text-slate-600">Revisi / Efektif</td>
-                  <td className="px-2 py-0.5">: 01 / 01 Jan 2024</td>
+                  <td className="px-2 py-0.5">: {sheet.ba_qa_meta?.revision || "01"} / {sheet.ba_qa_meta?.effective_date || "01 Jan 2024"}</td>
                 </tr>
               </tbody>
             </table>
@@ -89,7 +89,7 @@ export default function BeritaAcaraPrint() {
           {/* Document Title */}
           <div className="text-center py-2">
             <h1 className="text-base font-extrabold tracking-wide uppercase text-slate-950 underline underline-offset-4">
-              BERITA ACARA PENERIMAAN BARANG IMPORT
+              {sheet.ba_qa_meta?.title || "BERITA ACARA PENERIMAAN BARANG IMPORT"}
             </h1>
           </div>
 

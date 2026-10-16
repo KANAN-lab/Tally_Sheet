@@ -185,15 +185,19 @@ class QADocumentRegistry:
 
     @classmethod
     def resolve_tally_code(cls, current_val: Optional[str] = None, conn=None) -> str:
-        if current_val and str(current_val).strip():
-            return str(current_val).strip()
-        return cls.get_code(cls.KEY_TALLY, conn)
+        master_code = cls.get_code(cls.KEY_TALLY, conn)
+        val_str = str(current_val).strip() if current_val else ""
+        if not val_str or val_str.upper() in ["SOP.WH-D.01", "NONE", "NULL"]:
+            return master_code
+        return val_str or master_code
 
     @classmethod
     def resolve_ba_code(cls, current_val: Optional[str] = None, conn=None) -> str:
-        if current_val and str(current_val).strip():
-            return str(current_val).strip()
-        return cls.get_code(cls.KEY_BERITA_ACARA, conn)
+        master_code = cls.get_code(cls.KEY_BERITA_ACARA, conn)
+        val_str = str(current_val).strip() if current_val else ""
+        if not val_str or val_str.upper() in ["SOP.WH-D.02", "NONE", "NULL"]:
+            return master_code
+        return val_str or master_code
 
 
 # ----------------- OOP: BERITA ACARA DOMAIN MODEL -----------------

@@ -1932,6 +1932,8 @@ def get_tally_sheet(sheet_id: str):
         "qa_doc_no": QADocumentRegistry.resolve_tally_code(sheet["qa_doc_no"] if "qa_doc_no" in sheet.keys() else None, conn),
         "has_berita_acara": bool(sheet["has_berita_acara"]) if "has_berita_acara" in sheet.keys() else False,
         "ba_qa_doc_no": QADocumentRegistry.resolve_ba_code(sheet["ba_qa_doc_no"] if "ba_qa_doc_no" in sheet.keys() else None, conn),
+        "qa_meta": QADocumentRegistry.get_doc(QADocumentRegistry.KEY_TALLY, conn),
+        "ba_qa_meta": QADocumentRegistry.get_doc(QADocumentRegistry.KEY_BERITA_ACARA, conn),
         "ba_container_no": sheet["ba_container_no"] if "ba_container_no" in sheet.keys() else "",
         "ba_seal_no": sheet["ba_seal_no"] if "ba_seal_no" in sheet.keys() else "",
         "ba_seal_condition": sheet["ba_seal_condition"] if "ba_seal_condition" in sheet.keys() else "",

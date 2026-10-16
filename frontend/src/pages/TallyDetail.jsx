@@ -334,7 +334,7 @@ export default function TallyDetail() {
               onClick={() => openBeritaAcaraPrint(sheet.id)}
               className={`${sheet.has_berita_acara ? "bg-blue-700 hover:bg-blue-800" : "bg-slate-700 hover:bg-slate-800"} font-semibold text-xs text-white shadow-xs`}
               data-testid="tally-detail-print-ba-button"
-              title={sheet.has_berita_acara ? `Cetak Berita Acara Penerimaan Barang Import (${sheet.ba_qa_doc_no || ""})` : "Cetak Berita Acara Import"}
+              title={sheet.has_berita_acara ? `Cetak Berita Acara Penerimaan Barang Import (${sheet.ba_qa_doc_no || sheet.ba_qa_meta?.code || ""})` : "Cetak Berita Acara Import"}
             >
               <FileText className="mr-1.5 h-4 w-4" /> CETAK BERITA ACARA (BA)
             </Button>
@@ -497,11 +497,11 @@ export default function TallyDetail() {
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-semibold text-slate-500 uppercase">Standar QA Terkendali:</span>
             <span className="font-mono text-xs font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-              {sheet.qa_doc_no || ""}
+              {sheet.qa_doc_no || sheet.qa_meta?.code || ""}
             </span>
             {sheet.has_berita_acara && (
               <span className="font-mono text-xs font-bold text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
-                <Truck className="h-3 w-3" /> {sheet.ba_qa_doc_no || ""}
+                <Truck className="h-3 w-3" /> {sheet.ba_qa_doc_no || sheet.ba_qa_meta?.code || ""}
               </span>
             )}
           </div>
@@ -521,7 +521,7 @@ export default function TallyDetail() {
               <div className="flex items-center gap-2">
                 <Truck className="h-4 w-4 text-blue-700" />
                 <span className="text-xs font-bold text-blue-950 uppercase tracking-wide">
-                  Berita Acara Penerimaan Barang Import {sheet.ba_qa_doc_no ? `(${sheet.ba_qa_doc_no})` : ""}
+                  Berita Acara Penerimaan Barang Import {sheet.ba_qa_doc_no || sheet.ba_qa_meta?.code ? `(${sheet.ba_qa_doc_no || sheet.ba_qa_meta?.code})` : ""}
                 </span>
               </div>
               <button
