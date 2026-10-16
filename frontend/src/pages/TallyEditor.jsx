@@ -25,7 +25,7 @@ import TallyRow, { GRID } from "@/components/TallyRow";
 import { DetailSkeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/context/AuthContext";
 import { api, errMsg } from "@/lib/api";
-import { canEdit } from "@/lib/format";
+import { canEdit, formatTruckPlate } from "@/lib/format";
 import { swalConfirm } from "@/lib/swal";
 
 const LABELS = {
@@ -480,10 +480,11 @@ export default function TallyEditor() {
             <div>
               <Label className="text-xs font-semibold text-slate-800">No. Polisi Armada Truk (Opsional)</Label>
               <Input
-                placeholder="Contoh: B 9123 KAN"
+                placeholder="B 1234 ABC"
                 value={header.truck_plate}
-                onChange={(e) => updateHeader("truck_plate", e.target.value.toUpperCase())}
-                className="mt-1 uppercase text-xs"
+                onChange={(e) => updateHeader("truck_plate", formatTruckPlate(e.target.value))}
+                maxLength={12}
+                className="mt-1 font-mono uppercase text-xs"
                 data-testid="input-truck-plate"
               />
             </div>

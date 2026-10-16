@@ -40,3 +40,18 @@ export function canCancel(sheet, user) {
 export function openPrint(id) {
   window.open(`/tally/${id}/print`, "_blank", "noopener");
 }
+
+export function formatTruckPlate(raw) {
+  if (!raw) return "";
+  let val = String(raw).toUpperCase().replace(/[^A-Z0-9]/g, "");
+  val = val.replace(/^[^A-Z]+/, "");
+  const match = val.match(/^([A-Z]{1,3})(\d{1,4})?([A-Z]{0,4})?/);
+  if (match) {
+    let formatted = match[1];
+    if (match[2]) formatted += " " + match[2];
+    if (match[3]) formatted += " " + match[3];
+    return formatted;
+  }
+  return val.substring(0, 3);
+}
+
