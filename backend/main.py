@@ -1869,7 +1869,7 @@ def export_tally_sheet(sheet_id: str):
     )
 
     ws.merge_cells("A1:K1")
-    ws["A1"] = "TALLY SHEET MATERIAL"
+    ws["A1"] = "PT DIAMOND COLD STORAGE (PLANT 2111) - TALLY SHEET MATERIAL"
     ws["A1"].font = title_font
     ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
 
@@ -2298,9 +2298,9 @@ def export_reports_excel(
     ws1.title = "Ringkasan Audit ISO"
     ws1.views.sheetView[0].showGridLines = True
 
-    ws1["A1"] = "PT MATERIAL TALLY HUB INDONESIA"
+    ws1["A1"] = "PT DIAMOND COLD STORAGE — PLANT 2111"
     ws1["A1"].font = Font(name="Calibri", size=11, bold=True, color="1E3A8A")
-    ws1["A2"] = "LAPORAN AUDIT & REKAPITULASI PENERIMAAN MATERIAL INCOMING"
+    ws1["A2"] = "LAPORAN AUDIT & REKAPITULASI PENERIMAAN MATERIAL INCOMING (SAP PLANT 2111)"
     ws1["A2"].font = navy_title_font
     ws1["A3"] = "Standar Kepatuhan: ISO 9001:2015 Clause 8.4 (Control of Externally Provided Processes) & Clause 8.6 (Release of Products)"
     ws1["A3"].font = small_italic_font

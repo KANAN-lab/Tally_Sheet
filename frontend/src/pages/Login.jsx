@@ -36,8 +36,8 @@ export default function Login() {
         <div className="flex items-center gap-3 relative">
           <div className="h-12 w-12 rounded-xl bg-white/10 grid place-items-center ring-1 ring-white/20"><Boxes className="h-7 w-7" /></div>
           <div>
-            <div className="font-display text-2xl font-extrabold">Tally Sheet</div>
-            <div className="text-xs text-blue-100/80">Material Management System</div>
+            <div className="font-display text-2xl font-extrabold">Diamond Cold Storage</div>
+            <div className="text-xs font-semibold text-blue-200/90 tracking-widest uppercase">Plant 2111 · Material Management</div>
           </div>
         </div>
         <div className="relative max-w-md">

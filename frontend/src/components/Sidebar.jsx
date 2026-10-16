@@ -19,8 +19,8 @@ export function Brand() {
         <Boxes className="h-6 w-6 text-white" />
       </div>
       <div className="leading-tight">
-        <div className="font-display text-xl font-extrabold text-white tracking-tight">Tally Sheet</div>
-        <div className="text-[11px] text-blue-100/80">Material Management System</div>
+        <div className="font-display text-base font-extrabold text-white tracking-tight">Diamond Cold Storage</div>
+        <div className="text-[10px] font-semibold text-blue-200/90 tracking-wider uppercase">Plant 2111 · Tally Hub</div>
       </div>
     </div>
   );

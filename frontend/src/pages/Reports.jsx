@@ -196,9 +196,9 @@ export default function Reports() {
         <div className="flex items-start gap-2.5">
           <ShieldCheck className="h-5 w-5 text-blue-700 shrink-0 mt-0.5" />
           <div>
-            <div className="font-bold text-[#0B2149] text-sm">Standar Dokumen Kontrol Mutu — FORM-WHS-ISO-008 Rev. 02</div>
+            <div className="font-bold text-[#0B2149] text-sm">PT DIAMOND COLD STORAGE (PLANT 2111) — Standar Dokumen Kontrol Mutu FORM-WHS-ISO-008 Rev. 02</div>
             <div className="text-slate-600 mt-0.5">
-              Memenuhi Klausul ISO 9001:2015 8.4 (Evaluasi Pemasok Eksternal), 8.6 (Pelepasan Produk Ter-UU), 8.7 (Pengendalian Deviasi/Hold), serta ISO 22000/GMP (Traceability).
+              Sistem Manajemen Mutu Penerimaan Material Incoming. Memenuhi Klausul ISO 9001:2015 8.4, 8.6, 8.7, serta ISO 22000 / GMP Traceability.
             </div>
           </div>
         </div>
