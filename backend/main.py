@@ -176,6 +176,9 @@ else:
     DB_PATH = DB_ORIGIN
 
 SEED_FILE = Path(__file__).resolve().parent / "seed_materials.json"
+LOGO_PATH = Path(__file__).resolve().parent / "logo.png"
+if not LOGO_PATH.exists():
+    LOGO_PATH = Path(__file__).resolve().parent.parent / "frontend" / "public" / "logo.png"
 
 # Helpers for Password & Auth
 def hash_password(password: str) -> str:
@@ -1868,10 +1871,20 @@ def export_tally_sheet(sheet_id: str):
         bottom=Side(style='thin', color='D3D3D3')
     )
 
-    ws.merge_cells("A1:K1")
+    ws.merge_cells("A1:H1")
     ws["A1"] = "PT DIAMOND COLD STORAGE (PLANT 2111) - TALLY SHEET MATERIAL"
     ws["A1"].font = title_font
     ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
+
+    if LOGO_PATH.exists():
+        try:
+            from openpyxl.drawing.image import Image as OpenpyxlImage
+            logo_img = OpenpyxlImage(str(LOGO_PATH))
+            logo_img.width = 110
+            logo_img.height = 36
+            ws.add_image(logo_img, "J1")
+        except Exception as e:
+            print("Notice: could not add logo to tally excel:", e)
 
     ws["A3"] = "No. Dokumen:"
     ws["A3"].font = meta_bold
@@ -2304,6 +2317,16 @@ def export_reports_excel(
     ws1["A2"].font = navy_title_font
     ws1["A3"] = "Standar Kepatuhan: ISO 9001:2015 Clause 8.4 (Control of Externally Provided Processes) & Clause 8.6 (Release of Products)"
     ws1["A3"].font = small_italic_font
+
+    if LOGO_PATH.exists():
+        try:
+            from openpyxl.drawing.image import Image as OpenpyxlImage
+            logo_img = OpenpyxlImage(str(LOGO_PATH))
+            logo_img.width = 110
+            logo_img.height = 36
+            ws1.add_image(logo_img, "E1")
+        except Exception as e:
+            print("Notice: could not add logo to report excel:", e)
 
     ws1["A5"] = "Nomor Dokumen:"
     ws1["B5"] = "FORM-WHS-ISO-008 Rev. 02"

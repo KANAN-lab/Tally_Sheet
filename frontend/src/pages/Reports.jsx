@@ -193,8 +193,10 @@ export default function Reports() {
 
       {/* ISO Document Control Notice */}
       <div className="rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50/80 via-white to-blue-50/50 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-slate-700">
-        <div className="flex items-start gap-2.5">
-          <ShieldCheck className="h-5 w-5 text-blue-700 shrink-0 mt-0.5" />
+        <div className="flex items-center gap-3">
+          <div className="h-11 w-11 rounded-lg bg-white p-1 border border-slate-200 shadow-sm shrink-0 grid place-items-center">
+            <img src="/logo.png" alt="Diamond Logo" className="h-full w-full object-contain" />
+          </div>
           <div>
             <div className="font-bold text-[#0B2149] text-sm">PT DIAMOND COLD STORAGE (PLANT 2111) — Standar Dokumen Kontrol Mutu FORM-WHS-ISO-008 Rev. 02</div>
             <div className="text-slate-600 mt-0.5">

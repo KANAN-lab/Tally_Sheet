@@ -34,10 +34,13 @@ export default function TallyPrint() {
       <div className="print-sheet relative shadow-lg" data-testid="print-a4-document-container">
         {mark && <div className="pointer-events-none absolute inset-0 grid place-items-center text-[90px] font-black text-slate-300/50 -rotate-[30deg]" data-testid="print-watermark">{mark}</div>}
         <div className="flex items-start justify-between border-b-2 border-black pb-3">
-          <div>
-            <div className="text-[12px] font-black uppercase tracking-wider text-slate-900">PT DIAMOND COLD STORAGE</div>
-            <div className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">PLANT 2111 · MATERIAL MANAGEMENT SYSTEM</div>
-            <h1 className="text-2xl font-extrabold tracking-wide mt-0.5" style={{ fontFamily: "Manrope" }}>TALLY SHEET</h1>
+          <div className="flex items-center gap-3">
+            <img src="/logo.png" alt="Diamond Logo" className="h-12 w-auto object-contain shrink-0" />
+            <div>
+              <div className="text-[12px] font-black uppercase tracking-wider text-slate-900">PT DIAMOND COLD STORAGE</div>
+              <div className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">PLANT 2111 · MATERIAL MANAGEMENT SYSTEM</div>
+              <h1 className="text-xl font-extrabold tracking-wide mt-0.5" style={{ fontFamily: "Manrope" }}>TALLY SHEET</h1>
+            </div>
           </div>
           <table className="text-[11px]">
             <tbody>

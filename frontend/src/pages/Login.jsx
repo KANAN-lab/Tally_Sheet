@@ -34,7 +34,9 @@ export default function Login() {
       <div className="hidden lg:flex flex-col justify-between bg-[#0B2149] p-12 text-white relative overflow-hidden">
         <div className="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-blue-600/20 blur-3xl" />
         <div className="flex items-center gap-3 relative">
-          <div className="h-12 w-12 rounded-xl bg-white/10 grid place-items-center ring-1 ring-white/20"><Boxes className="h-7 w-7" /></div>
+          <div className="h-14 w-14 rounded-2xl bg-white p-2 grid place-items-center shadow-md shrink-0">
+            <img src="/logo.png" alt="Diamond Cold Storage" className="h-full w-full object-contain" />
+          </div>
           <div>
             <div className="font-display text-2xl font-extrabold">Diamond Cold Storage</div>
             <div className="text-xs font-semibold text-blue-200/90 tracking-widest uppercase">Plant 2111 · Material Management</div>

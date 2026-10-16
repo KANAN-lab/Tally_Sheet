@@ -15,8 +15,8 @@ export const NAV = [
 export function Brand() {
   return (
     <div className="flex items-center gap-3 px-5 py-5">
-      <div className="h-11 w-11 rounded-xl bg-white/10 grid place-items-center ring-1 ring-white/20">
-        <Boxes className="h-6 w-6 text-white" />
+      <div className="h-11 w-11 rounded-xl bg-white p-1.5 grid place-items-center shadow-sm shrink-0">
+        <img src="/logo.png" alt="Diamond Cold Storage" className="h-full w-full object-contain" />
       </div>
       <div className="leading-tight">
         <div className="font-display text-base font-extrabold text-white tracking-tight">Diamond Cold Storage</div>
