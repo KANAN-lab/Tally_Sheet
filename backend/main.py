@@ -94,6 +94,28 @@ def sync_from_supabase_if_needed(conn, sheet_id: str = None):
     if not SUPABASE_KEY or not SUPABASE_URL:
         return
     try:
+        # Sync active global settings from Supabase so serverless instance has latest QA docs & permissions
+        try:
+            r_set = requests.get(f"{SUPABASE_URL}/rest/v1/settings?id=eq.global", headers=get_sb_headers(), timeout=3)
+            if r_set.status_code == 200 and r_set.json():
+                s_data = r_set.json()[0]
+                conn.execute("""
+                    INSERT OR REPLACE INTO settings (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, role_permissions_json, updated_at, updated_by_name)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    "global",
+                    s_data.get("required_json") or "{}",
+                    s_data.get("duplicate_rule") or "within_document",
+                    s_data.get("hold_categories_json") or "[]",
+                    s_data.get("qa_documents_json") or "{}",
+                    s_data.get("role_permissions_json") or "{}",
+                    s_data.get("updated_at") or "",
+                    s_data.get("updated_by_name") or ""
+                ))
+                conn.commit()
+        except Exception:
+            pass
+
         url = f"{SUPABASE_URL}/rest/v1/tally_sheets?select=*,tally_items(*)"
         if sheet_id:
             url += f"&or=(id.eq.{sheet_id},doc_no.eq.{sheet_id})"
