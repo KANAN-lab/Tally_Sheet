@@ -2642,8 +2642,10 @@ def export_tally_sheet(sheet_id: str):
         try:
             from openpyxl.drawing.image import Image as OpenpyxlImage
             logo_img = OpenpyxlImage(str(LOGO_PATH))
-            logo_img.width = 110
-            logo_img.height = 36
+            target_h = 42
+            target_w = int(logo_img.width * (target_h / logo_img.height)) if logo_img.height else 42
+            logo_img.width = target_w
+            logo_img.height = target_h
             ws.add_image(logo_img, "J1")
         except Exception as e:
             print("Notice: could not add logo to tally excel:", e)
@@ -3081,125 +3083,216 @@ def export_reports_excel(
     ws1.title = "Ringkasan Audit ISO"
     ws1.views.sheetView[0].showGridLines = True
 
+    def style_merged_range(ws, cell_range, font=None, fill=None, border=None, alignment=None):
+        for row in ws[cell_range]:
+            for cell in row:
+                if font: cell.font = font
+                if fill: cell.fill = fill
+                if border: cell.border = border
+                if alignment: cell.alignment = alignment
+
+    ws1.row_dimensions[1].height = 20
+    ws1.row_dimensions[2].height = 24
+    ws1.row_dimensions[3].height = 18
+    ws1.row_dimensions[4].height = 10
+    ws1.row_dimensions[5].height = 20
+    ws1.row_dimensions[6].height = 20
+    ws1.row_dimensions[7].height = 20
+    ws1.row_dimensions[8].height = 12
+    ws1.row_dimensions[9].height = 24
+    ws1.row_dimensions[10].height = 24
+
+    ws1.merge_cells("A1:E1")
     ws1["A1"] = "PT DIAMOND COLD STORAGE — PLANT 2111"
     ws1["A1"].font = Font(name="Calibri", size=11, bold=True, color="1E3A8A")
+    ws1["A1"].alignment = Alignment(vertical="center")
+
+    ws1.merge_cells("A2:E2")
     ws1["A2"] = "LAPORAN AUDIT & REKAPITULASI PENERIMAAN MATERIAL INCOMING (SAP PLANT 2111)"
-    ws1["A2"].font = navy_title_font
+    ws1["A2"].font = Font(name="Calibri", size=13, bold=True, color="0B2149")
+    ws1["A2"].alignment = Alignment(vertical="center")
+
+    ws1.merge_cells("A3:E3")
     ws1["A3"] = "Standar Kepatuhan: ISO 9001:2015 Clause 8.4 (Control of Externally Provided Processes) & Clause 8.6 (Release of Products)"
     ws1["A3"].font = small_italic_font
+    ws1["A3"].alignment = Alignment(vertical="center")
 
     if LOGO_PATH.exists():
         try:
             from openpyxl.drawing.image import Image as OpenpyxlImage
             logo_img = OpenpyxlImage(str(LOGO_PATH))
-            logo_img.width = 110
-            logo_img.height = 36
-            ws1.add_image(logo_img, "E1")
+            target_h = 56
+            target_w = int(logo_img.width * (target_h / logo_img.height)) if logo_img.height else 56
+            logo_img.width = target_w
+            logo_img.height = target_h
+            ws1.add_image(logo_img, "F1")
         except Exception as e:
             print("Notice: could not add logo to report excel:", e)
 
     ws1["A5"] = "Nomor Dokumen:"
+    ws1.merge_cells("B5:C5")
     ws1["B5"] = "FORM-WHS-ISO-008 Rev. 02"
-    ws1["D5"] = "Tanggal Ditarik:"
-    ws1["E5"] = now_str
-    
+
     ws1["A6"] = "Klasifikasi:"
+    ws1.merge_cells("B6:C6")
     ws1["B6"] = "Confidential / Official Audit Record"
-    ws1["D6"] = "Ditarik Oleh:"
-    ws1["E6"] = f"{user.get('name', 'Admin')} ({user.get('role', 'admin')})"
 
     ws1["A7"] = "Periode Kedatangan:"
+    ws1.merge_cells("B7:C7")
     ws1["B7"] = period_str
+
+    ws1["D5"] = "Tanggal Ditarik:"
+    ws1.merge_cells("E5:F5")
+    ws1["E5"] = now_str
+
+    ws1["D6"] = "Ditarik Oleh:"
+    ws1.merge_cells("E6:F6")
+    ws1["E6"] = f"{user.get('name', 'Admin')} ({user.get('role', 'admin')})"
+
     ws1["D7"] = "Filter Status:"
+    ws1.merge_cells("E7:F7")
     ws1["E7"] = status.upper()
 
+    meta_label_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+    meta_val_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+    meta_label_font = Font(name="Calibri", size=9.5, bold=True, color="1E293B")
+    meta_val_font = Font(name="Calibri", size=9.5, color="0F172A")
+
     for r in range(5, 8):
-        ws1[f"A{r}"].font = bold_font
-        ws1[f"B{r}"].font = regular_font
-        ws1[f"D{r}"].font = bold_font
-        ws1[f"E{r}"].font = regular_font
-        for c in ["A", "B", "D", "E"]:
-            ws1[f"{c}{r}"].fill = ice_blue_fill
-            ws1[f"{c}{r}"].border = border_thin
+        ws1[f"A{r}"].font = meta_label_font
+        ws1[f"A{r}"].fill = meta_label_fill
+        ws1[f"A{r}"].border = border_thin
+        ws1[f"A{r}"].alignment = Alignment(vertical="center", indent=1)
 
-    ws1["A9"] = "RINGKASAN METRIK AUDIT MUTU (QUALITY AUDIT SUMMARY)"
-    ws1["A9"].font = Font(name="Calibri", size=11, bold=True, color="0B2149")
+        style_merged_range(ws1, f"B{r}:C{r}", font=meta_val_font, fill=meta_val_fill, border=border_thin, alignment=Alignment(vertical="center", indent=1))
 
-    kpi_headers = ["Parameter Metrik", "Nilai", "Satuan", "Standar / Keterangan"]
-    for idx, h in enumerate(kpi_headers, start=1):
-        cell = ws1.cell(row=10, column=idx, value=h)
-        cell.font = white_bold_font
-        cell.fill = navy_header_fill
-        cell.alignment = Alignment(horizontal="center", vertical="center")
-        cell.border = border_thin
+        ws1[f"D{r}"].font = meta_label_font
+        ws1[f"D{r}"].fill = meta_label_fill
+        ws1[f"D{r}"].border = border_thin
+        ws1[f"D{r}"].alignment = Alignment(vertical="center", indent=1)
+
+        style_merged_range(ws1, f"E{r}:F{r}", font=meta_val_font, fill=meta_val_fill, border=border_thin, alignment=Alignment(vertical="center", indent=1))
+
+    ws1.merge_cells("A9:F9")
+    ws1["A9"] = "  RINGKASAN METRIK AUDIT MUTU (QUALITY AUDIT SUMMARY)"
+    style_merged_range(ws1, "A9:F9", font=white_bold_font, fill=navy_header_fill, border=border_thin, alignment=Alignment(vertical="center"))
+
+    sub_header_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
+
+    kpi_cols = [
+        ("A10", "Parameter Metrik Mutu", Alignment(horizontal="center", vertical="center")),
+        ("B10", "Nilai / Capaian", Alignment(horizontal="center", vertical="center")),
+        ("C10", "Satuan", Alignment(horizontal="center", vertical="center")),
+        ("D10", "Standar Mutu (Acuan ISO)", Alignment(horizontal="center", vertical="center")),
+    ]
+    for pos, text, align in kpi_cols:
+        ws1[pos] = text
+        ws1[pos].font = white_bold_font
+        ws1[pos].fill = sub_header_fill
+        ws1[pos].alignment = align
+        ws1[pos].border = border_thin
+
+    ws1.merge_cells("E10:F10")
+    ws1["E10"] = "Keterangan & Analisis Operasional"
+    style_merged_range(ws1, "E10:F10", font=white_bold_font, fill=sub_header_fill, border=border_thin, alignment=Alignment(horizontal="center", vertical="center"))
 
     kpi_data = [
-        ("Total Dokumen Kedatangan (Surat Jalan)", total_docs, "Dokumen", "Total armada/SJ masuk tercatat"),
-        ("Total Baris Material Diterima", kpi_row["total_items"] or 0, "Baris", "Total varian material & batch"),
-        ("Total Kuantitas Fisik Masuk", float(kpi_row["total_qty"] or 0), "Unit/Qty", "Akumulasi kuantiti seluruh material"),
-        ("First-Pass Quality Yield (Tingkat Kelolosan)", f"{first_pass_yield}%", "Persen", "Target ISO: >= 98.0% Lolos Langsung"),
-        ("Dokumen Selesai (Stock Ter-UU)", completed_docs, "Dokumen", "Resmi lolos verifikasi fisik & uji mutu QC"),
-        ("Dokumen Ditahan (Hold Admin / QC)", hold_docs, "Dokumen", "Mengalami deviasi / perlu perbaikan"),
-        ("Dokumen Dalam Proses Antrean", kpi_row["in_progress_docs"] or 0, "Dokumen", "Sedang verifikasi Admin WH atau inspeksi QC")
+        ("Total Dokumen Kedatangan (Surat Jalan)", total_docs, "Dokumen", "100% Tercatat & Terverifikasi", "Total armada / surat jalan masuk tercatat di Plant 2111"),
+        ("Total Baris Material Diterima", kpi_row["total_items"] or 0, "Baris", "Kesesuaian Item PO vs SJ", "Total variasi material, kode SAP, dan batch kedatangan"),
+        ("Total Kuantitas Fisik Masuk", float(kpi_row["total_qty"] or 0), "Unit/Qty", "Toleransi Selisih Fisik 0%", "Akumulasi kuantiti seluruh material diterima dan dihitung"),
+        ("First-Pass Quality Yield (Tingkat Kelolosan)", f"{first_pass_yield}%", "Persen", "Target ISO: ≥ 98.0% Lolos", "Tingkat material lolos verifikasi tanpa hold deviasi"),
+        ("Dokumen Selesai (Stock Ter-UU)", completed_docs, "Dokumen", "Status Release Mutu (UU)", "Resmi lolos verifikasi fisik & uji mutu QC (Stock Ter-UU)"),
+        ("Dokumen Ditahan (Hold Admin / QC)", hold_docs, "Dokumen", "Deviasi: 0 Toleransi Kritis", "Mengalami deviasi / hold sementara menunggu investigasi"),
+        ("Dokumen Dalam Proses Antrean", kpi_row["in_progress_docs"] or 0, "Dokumen", "SLA Verifikasi < 24 Jam", "Sedang dalam proses verifikasi Admin WH atau inspeksi QC")
     ]
 
-    for row_idx, (param, val, unit, desc) in enumerate(kpi_data, start=11):
-        ws1.cell(row=row_idx, column=1, value=param).font = regular_font
-        c_val = ws1.cell(row=row_idx, column=2, value=val)
-        c_val.font = bold_font
-        c_val.alignment = Alignment(horizontal="right")
-        if isinstance(val, (int, float)):
-            c_val.number_format = "#,##0.00" if isinstance(val, float) else "#,##0"
-        c_unit = ws1.cell(row=row_idx, column=3, value=unit)
-        c_unit.font = regular_font
-        c_unit.alignment = Alignment(horizontal="center")
-        ws1.cell(row=row_idx, column=4, value=desc).font = small_italic_font
+    target_badge_font = Font(name="Calibri", size=9, bold=True, color="1E3A8A")
 
+    for row_idx, (param, val, unit, std, desc) in enumerate(kpi_data, start=11):
+        ws1.row_dimensions[row_idx].height = 22
         fill_c = zebra_fill if row_idx % 2 == 0 else white_fill
-        for c in range(1, 5):
-            ws1.cell(row=row_idx, column=c).border = border_thin
-            ws1.cell(row=row_idx, column=c).fill = fill_c
 
-    # ISO Sign-off Table
-    ws1.cell(row=20, column=1, value="LEMBAR PENGESAHAN DOKUMEN AUDIT (ISO 9001 SIGN-OFF)").font = Font(name="Calibri", size=11, bold=True, color="0B2149")
-    
-    sign_headers = ["Dibuat Oleh (Checker / Operator)", "Diperiksa Oleh (Warehouse Supervisor)", "Diverifikasi Mutu (QC / QA Manager)"]
-    ws1.merge_cells("A21:B21")
-    ws1.merge_cells("C21:D21")
-    ws1.merge_cells("E21:F21")
-    ws1["A21"] = sign_headers[0]
-    ws1["C21"] = sign_headers[1]
-    ws1["E21"] = sign_headers[2]
-    for c in ["A21", "B21", "C21", "D21", "E21", "F21"]:
-        ws1[c].font = white_bold_font
-        ws1[c].fill = navy_header_fill
-        ws1[c].alignment = Alignment(horizontal="center")
-        ws1[c].border = border_thin
+        c_a = ws1.cell(row=row_idx, column=1, value=param)
+        c_a.font = regular_font
+        c_a.alignment = Alignment(vertical="center", indent=1)
+        c_a.border = border_thin
+        c_a.fill = fill_c
 
-    for r in range(22, 26):
-        ws1.merge_cells(f"A{r}:B{r}")
-        ws1.merge_cells(f"C{r}:D{r}")
-        ws1.merge_cells(f"E{r}:F{r}")
-        for col_name in ["A", "B", "C", "D", "E", "F"]:
-            ws1[f"{col_name}{r}"].border = border_thin
+        c_b = ws1.cell(row=row_idx, column=2, value=val)
+        c_b.font = bold_font
+        c_b.alignment = Alignment(horizontal="right", vertical="center")
+        if isinstance(val, (int, float)):
+            c_b.number_format = "#,##0.00" if isinstance(val, float) else "#,##0"
+        c_b.border = border_thin
+        c_b.fill = fill_c
 
-    ws1.merge_cells("A26:B26")
-    ws1.merge_cells("C26:D26")
-    ws1.merge_cells("E26:F26")
-    ws1["A26"] = "Nama: __________________\nTgl:   __________________"
-    ws1["C26"] = "Nama: __________________\nTgl:   __________________"
-    ws1["E26"] = "Nama: __________________\nTgl:   __________________"
-    for c in ["A26", "B26", "C26", "D26", "E26", "F26"]:
-        ws1[c].font = regular_font
-        ws1[c].alignment = Alignment(wrap_text=True)
-        ws1[c].border = border_thin
+        c_c = ws1.cell(row=row_idx, column=3, value=unit)
+        c_c.font = regular_font
+        c_c.alignment = Alignment(horizontal="center", vertical="center")
+        c_c.border = border_thin
+        c_c.fill = fill_c
 
-    ws1.column_dimensions["A"].width = 38
-    ws1.column_dimensions["B"].width = 24
+        c_d = ws1.cell(row=row_idx, column=4, value=std)
+        c_d.font = target_badge_font
+        c_d.alignment = Alignment(horizontal="center", vertical="center")
+        c_d.border = border_thin
+        c_d.fill = fill_c
+
+        ws1.merge_cells(start_row=row_idx, start_column=5, end_row=row_idx, end_column=6)
+        ws1.cell(row=row_idx, column=5, value=desc)
+        style_merged_range(ws1, f"E{row_idx}:F{row_idx}", font=small_italic_font, fill=fill_c, border=border_thin, alignment=Alignment(vertical="center", indent=1))
+
+    ws1.row_dimensions[18].height = 14
+
+    ws1.row_dimensions[19].height = 24
+    ws1.merge_cells("A19:F19")
+    ws1["A19"] = "  LEMBAR PENGESAHAN DOKUMEN AUDIT (ISO 9001 SIGN-OFF)"
+    style_merged_range(ws1, "A19:F19", font=white_bold_font, fill=navy_header_fill, border=border_thin, alignment=Alignment(vertical="center"))
+
+    ws1.row_dimensions[20].height = 22
+    ws1.merge_cells("A20:B20")
+    ws1["A20"] = "Dibuat Oleh (Checker / Operator)"
+    style_merged_range(ws1, "A20:B20", font=white_bold_font, fill=sub_header_fill, border=border_thin, alignment=Alignment(horizontal="center", vertical="center"))
+
+    ws1.merge_cells("C20:D20")
+    ws1["C20"] = "Diperiksa Oleh (Warehouse Supervisor)"
+    style_merged_range(ws1, "C20:D20", font=white_bold_font, fill=sub_header_fill, border=border_thin, alignment=Alignment(horizontal="center", vertical="center"))
+
+    ws1.merge_cells("E20:F20")
+    ws1["E20"] = "Diverifikasi Mutu (QC / QA Manager)"
+    style_merged_range(ws1, "E20:F20", font=white_bold_font, fill=sub_header_fill, border=border_thin, alignment=Alignment(horizontal="center", vertical="center"))
+
+    for r in range(21, 25):
+        ws1.row_dimensions[r].height = 18
+
+    ws1.merge_cells("A21:B24")
+    style_merged_range(ws1, "A21:B24", fill=white_fill, border=border_thin)
+
+    ws1.merge_cells("C21:D24")
+    style_merged_range(ws1, "C21:D24", fill=white_fill, border=border_thin)
+
+    ws1.merge_cells("E21:F24")
+    style_merged_range(ws1, "E21:F24", fill=white_fill, border=border_thin)
+
+    ws1.row_dimensions[25].height = 50
+    ws1.merge_cells("A25:B25")
+    ws1["A25"] = "Nama       : ____________________\nTanggal : ____________________\nStatus     : [  ] Sesuai    [  ] Ada Catatan"
+    style_merged_range(ws1, "A25:B25", font=regular_font, fill=meta_label_fill, border=border_thin, alignment=Alignment(vertical="center", indent=1, wrap_text=True))
+
+    ws1.merge_cells("C25:D25")
+    ws1["C25"] = "Nama       : ____________________\nTanggal : ____________________\nStatus     : [  ] Approved    [  ] Revisi"
+    style_merged_range(ws1, "C25:D25", font=regular_font, fill=meta_label_fill, border=border_thin, alignment=Alignment(vertical="center", indent=1, wrap_text=True))
+
+    ws1.merge_cells("E25:F25")
+    ws1["E25"] = "Nama       : ____________________\nTanggal : ____________________\nStatus     : [  ] Released    [  ] Hold Mutu"
+    style_merged_range(ws1, "E25:F25", font=regular_font, fill=meta_label_fill, border=border_thin, alignment=Alignment(vertical="center", indent=1, wrap_text=True))
+
+    ws1.column_dimensions["A"].width = 28
+    ws1.column_dimensions["B"].width = 16
     ws1.column_dimensions["C"].width = 16
-    ws1.column_dimensions["D"].width = 32
-    ws1.column_dimensions["E"].width = 28
-    ws1.column_dimensions["F"].width = 28
+    ws1.column_dimensions["D"].width = 28
+    ws1.column_dimensions["E"].width = 22
+    ws1.column_dimensions["F"].width = 22
 
     # ------------------ SHEET 2: DETAIL KETERTELUSURAN MATERIAL ------------------
     ws2 = wb.create_sheet(title="Detail Ketertelusuran")
@@ -3219,42 +3312,44 @@ def export_reports_excel(
         cell.alignment = Alignment(horizontal="center", vertical="center")
         cell.border = border_thin
 
+    ws2.row_dimensions[1].height = 26
     data_start_row = 2
     for idx, r in enumerate(rows, start=1):
         curr_row = data_start_row + idx - 1
+        ws2.row_dimensions[curr_row].height = 20
         qty_num = float(r["qty"] or 0)
         st_text = status_label_map.get(r["status"], r["status"].upper())
         qc_time = (r["qc_at"] or "")[:16].replace("T", " ") if r["qc_at"] else "-"
 
-        ws2.cell(row=curr_row, column=1, value=idx).alignment = Alignment(horizontal="center")
-        ws2.cell(row=curr_row, column=2, value=r["arrival_date"] or "").alignment = Alignment(horizontal="center")
-        ws2.cell(row=curr_row, column=3, value=r["doc_no"]).alignment = Alignment(horizontal="center")
-        ws2.cell(row=curr_row, column=4, value=r["delivery_note_no"] or "-").alignment = Alignment(horizontal="center")
-        ws2.cell(row=curr_row, column=5, value=r["po_no"] or "-").alignment = Alignment(horizontal="center")
-        ws2.cell(row=curr_row, column=6, value=r["truck_plate"] or "-").alignment = Alignment(horizontal="center")
-        ws2.cell(row=curr_row, column=7, value=r["supplier_code"] or "-").alignment = Alignment(horizontal="center")
-        ws2.cell(row=curr_row, column=8, value=r["supplier_name"] or "-")
-        ws2.cell(row=curr_row, column=9, value=r["material_code"]).alignment = Alignment(horizontal="center")
-        ws2.cell(row=curr_row, column=10, value=r["material_name"])
-        ws2.cell(row=curr_row, column=11, value=r["batch_fisik"] or "-").alignment = Alignment(horizontal="center")
-        ws2.cell(row=curr_row, column=12, value=r["supplier_batch"] or "-").alignment = Alignment(horizontal="center")
-        ws2.cell(row=curr_row, column=13, value=r["production_date"] or "-").alignment = Alignment(horizontal="center")
-        ws2.cell(row=curr_row, column=14, value=r["expired_date"] or "-").alignment = Alignment(horizontal="center")
+        ws2.cell(row=curr_row, column=1, value=idx).alignment = Alignment(horizontal="center", vertical="center")
+        ws2.cell(row=curr_row, column=2, value=r["arrival_date"] or "").alignment = Alignment(horizontal="center", vertical="center")
+        ws2.cell(row=curr_row, column=3, value=r["doc_no"]).alignment = Alignment(horizontal="center", vertical="center")
+        ws2.cell(row=curr_row, column=4, value=r["delivery_note_no"] or "-").alignment = Alignment(horizontal="center", vertical="center")
+        ws2.cell(row=curr_row, column=5, value=r["po_no"] or "-").alignment = Alignment(horizontal="center", vertical="center")
+        ws2.cell(row=curr_row, column=6, value=r["truck_plate"] or "-").alignment = Alignment(horizontal="center", vertical="center")
+        ws2.cell(row=curr_row, column=7, value=r["supplier_code"] or "-").alignment = Alignment(horizontal="center", vertical="center")
+        ws2.cell(row=curr_row, column=8, value=r["supplier_name"] or "-").alignment = Alignment(vertical="center")
+        ws2.cell(row=curr_row, column=9, value=r["material_code"]).alignment = Alignment(horizontal="center", vertical="center")
+        ws2.cell(row=curr_row, column=10, value=r["material_name"]).alignment = Alignment(vertical="center")
+        ws2.cell(row=curr_row, column=11, value=r["batch_fisik"] or "-").alignment = Alignment(horizontal="center", vertical="center")
+        ws2.cell(row=curr_row, column=12, value=r["supplier_batch"] or "-").alignment = Alignment(horizontal="center", vertical="center")
+        ws2.cell(row=curr_row, column=13, value=r["production_date"] or "-").alignment = Alignment(horizontal="center", vertical="center")
+        ws2.cell(row=curr_row, column=14, value=r["expired_date"] or "-").alignment = Alignment(horizontal="center", vertical="center")
         
         c_qty = ws2.cell(row=curr_row, column=15, value=qty_num)
         c_qty.number_format = "#,##0.00"
-        c_qty.alignment = Alignment(horizontal="right")
+        c_qty.alignment = Alignment(horizontal="right", vertical="center")
         
-        ws2.cell(row=curr_row, column=16, value=r["uom"] or "").alignment = Alignment(horizontal="center")
+        ws2.cell(row=curr_row, column=16, value=r["uom"] or "").alignment = Alignment(horizontal="center", vertical="center")
         
         c_stat = ws2.cell(row=curr_row, column=17, value=st_text)
-        c_stat.alignment = Alignment(horizontal="center")
+        c_stat.alignment = Alignment(horizontal="center", vertical="center")
         c_stat.font = Font(name="Calibri", size=9, bold=True, color="047857" if r["status"] == "completed" else ("B91C1C" if "hold" in r["status"] else "1E3A8A"))
 
-        ws2.cell(row=curr_row, column=18, value=r["pic_name"] or r["created_by_name"] or "-")
-        ws2.cell(row=curr_row, column=19, value=r["updated_by_name"] or "-")
-        ws2.cell(row=curr_row, column=20, value=r["qc_by_name"] or "-")
-        ws2.cell(row=curr_row, column=21, value=qc_time).alignment = Alignment(horizontal="center")
+        ws2.cell(row=curr_row, column=18, value=r["pic_name"] or r["created_by_name"] or "-").alignment = Alignment(vertical="center")
+        ws2.cell(row=curr_row, column=19, value=r["updated_by_name"] or "-").alignment = Alignment(vertical="center")
+        ws2.cell(row=curr_row, column=20, value=r["qc_by_name"] or "-").alignment = Alignment(vertical="center")
+        ws2.cell(row=curr_row, column=21, value=qc_time).alignment = Alignment(horizontal="center", vertical="center")
 
         row_fill = zebra_fill if idx % 2 == 0 else white_fill
         for c in range(1, 22):
@@ -3265,14 +3360,15 @@ def export_reports_excel(
             cell.fill = row_fill
 
     total_row_idx = data_start_row + len(rows)
+    ws2.row_dimensions[total_row_idx].height = 24
     ws2.cell(row=total_row_idx, column=1, value="TOTAL KUANTITAS").font = bold_font
     ws2.merge_cells(start_row=total_row_idx, start_column=1, end_row=total_row_idx, end_column=14)
-    ws2.cell(row=total_row_idx, column=1).alignment = Alignment(horizontal="right")
+    ws2.cell(row=total_row_idx, column=1).alignment = Alignment(horizontal="right", vertical="center")
     
     total_qty_cell = ws2.cell(row=total_row_idx, column=15, value=f"=SUM(O2:O{total_row_idx-1})" if len(rows) > 0 else 0)
     total_qty_cell.font = bold_font
     total_qty_cell.number_format = "#,##0.00"
-    total_qty_cell.alignment = Alignment(horizontal="right")
+    total_qty_cell.alignment = Alignment(horizontal="right", vertical="center")
     total_qty_cell.border = border_total
 
     for c in range(1, 22):
@@ -3288,6 +3384,10 @@ def export_reports_excel(
     # ------------------ SHEET 3: LOG KETIDAKSESUAIAN & PENAHANAN (HOLD) ------------------
     ws3 = wb.create_sheet(title="Log Ketidaksesuaian & Hold")
     ws3.views.sheetView[0].showGridLines = True
+
+    ws3.row_dimensions[1].height = 24
+    ws3.row_dimensions[2].height = 18
+    ws3.row_dimensions[4].height = 26
 
     ws3["A1"] = "LOG PENANGANAN KETIDAKSESUAIAN MATERIAL & STATUS HOLD"
     ws3["A1"].font = Font(name="Calibri", size=13, bold=True, color="7F1D1D")
@@ -3309,22 +3409,24 @@ def export_reports_excel(
     hold_rows = [r for r in rows if "hold" in r["status"] or r["status"] == "cancelled" or r["pending_category"] or r["pending_reason"]]
     
     if not hold_rows:
+        ws3.row_dimensions[5].height = 24
         ws3.cell(row=5, column=1, value="Tidak ada catatan deviasi atau penahanan (Hold) pada periode ini. Semua material memenuhi standar mutu.").font = small_italic_font
         ws3.merge_cells("A5:K5")
     else:
         for idx, hr in enumerate(hold_rows, start=1):
             curr_r = 4 + idx
-            ws3.cell(row=curr_r, column=1, value=idx).alignment = Alignment(horizontal="center")
-            ws3.cell(row=curr_r, column=2, value=hr["arrival_date"] or "").alignment = Alignment(horizontal="center")
-            ws3.cell(row=curr_r, column=3, value=hr["doc_no"]).alignment = Alignment(horizontal="center")
-            ws3.cell(row=curr_r, column=4, value=hr["delivery_note_no"] or "-").alignment = Alignment(horizontal="center")
-            ws3.cell(row=curr_r, column=5, value=hr["po_no"] or "-").alignment = Alignment(horizontal="center")
-            ws3.cell(row=curr_r, column=6, value=hr["supplier_name"] or "-")
-            ws3.cell(row=curr_r, column=7, value=f"{hr['material_code']} - {hr['material_name']}")
-            ws3.cell(row=curr_r, column=8, value=hr["pending_category"] or "Lain-lain").alignment = Alignment(horizontal="center")
-            ws3.cell(row=curr_r, column=9, value=hr["pending_reason"] or "-")
-            ws3.cell(row=curr_r, column=10, value=status_label_map.get(hr["status"], hr["status"].upper())).alignment = Alignment(horizontal="center")
-            ws3.cell(row=curr_r, column=11, value=hr["updated_by_name"] or hr["created_by_name"] or "-")
+            ws3.row_dimensions[curr_r].height = 20
+            ws3.cell(row=curr_r, column=1, value=idx).alignment = Alignment(horizontal="center", vertical="center")
+            ws3.cell(row=curr_r, column=2, value=hr["arrival_date"] or "").alignment = Alignment(horizontal="center", vertical="center")
+            ws3.cell(row=curr_r, column=3, value=hr["doc_no"]).alignment = Alignment(horizontal="center", vertical="center")
+            ws3.cell(row=curr_r, column=4, value=hr["delivery_note_no"] or "-").alignment = Alignment(horizontal="center", vertical="center")
+            ws3.cell(row=curr_r, column=5, value=hr["po_no"] or "-").alignment = Alignment(horizontal="center", vertical="center")
+            ws3.cell(row=curr_r, column=6, value=hr["supplier_name"] or "-").alignment = Alignment(vertical="center")
+            ws3.cell(row=curr_r, column=7, value=f"{hr['material_code']} - {hr['material_name']}").alignment = Alignment(vertical="center")
+            ws3.cell(row=curr_r, column=8, value=hr["pending_category"] or "Lain-lain").alignment = Alignment(horizontal="center", vertical="center")
+            ws3.cell(row=curr_r, column=9, value=hr["pending_reason"] or "-").alignment = Alignment(vertical="center")
+            ws3.cell(row=curr_r, column=10, value=status_label_map.get(hr["status"], hr["status"].upper())).alignment = Alignment(horizontal="center", vertical="center")
+            ws3.cell(row=curr_r, column=11, value=hr["updated_by_name"] or hr["created_by_name"] or "-").alignment = Alignment(vertical="center")
 
             row_fill = zebra_fill if idx % 2 == 0 else white_fill
             for c in range(1, 12):
