@@ -352,14 +352,25 @@ export default function TallyDetail() {
             >
               <Printer className="mr-1.5 h-4 w-4" /> PRINT TALLY SHEET
             </Button>
-            <Button
-              onClick={() => openBeritaAcaraPrint(sheet.id)}
-              className={`${sheet.has_berita_acara ? "bg-blue-700 hover:bg-blue-800" : "bg-slate-700 hover:bg-slate-800"} font-semibold text-xs text-white shadow-xs`}
-              data-testid="tally-detail-print-ba-button"
-              title={sheet.has_berita_acara ? `Cetak Berita Acara Penerimaan Barang Import (${sheet.ba_qa_doc_no || sheet.ba_qa_meta?.code || ""})` : "Cetak Berita Acara Import"}
-            >
-              <FileText className="mr-1.5 h-4 w-4" /> CETAK BERITA ACARA (BA)
-            </Button>
+            {sheet.has_berita_acara ? (
+              <Button
+                onClick={() => openBeritaAcaraPrint(sheet.id)}
+                className="bg-blue-700 hover:bg-blue-800 font-semibold text-xs text-white shadow-xs"
+                data-testid="tally-detail-print-ba-button"
+                title={`Cetak Berita Acara Penerimaan Barang (${sheet.ba_qa_doc_no || sheet.ba_qa_meta?.code || ""})`}
+              >
+                <FileText className="mr-1.5 h-4 w-4" /> CETAK BERITA ACARA (BA)
+              </Button>
+            ) : (
+              <Button
+                disabled
+                className="bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed font-semibold text-xs border border-slate-300 dark:border-slate-700 shadow-none"
+                data-testid="tally-detail-print-ba-button-disabled"
+                title="Dokumen ini tidak menyertakan Berita Acara (Non-BA / Kedatangan Reguler Domestik)"
+              >
+                <FileText className="mr-1.5 h-4 w-4 opacity-40" /> TANPA BERITA ACARA
+              </Button>
+            )}
             <Button
               onClick={exportX}
               className="bg-emerald-600 hover:bg-emerald-700 font-semibold text-xs"
@@ -585,6 +596,23 @@ export default function TallyDetail() {
                 </span>
               </div>
             </div>
+          </div>
+        )}
+
+        {!sheet.has_berita_acara && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-slate-600">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+              <span>Dokumen ini berstatus <strong>Non-Berita Acara</strong> (Kedatangan Reguler / Domestik).</span>
+            </div>
+            {canEdit(sheet, user) && (
+              <button
+                onClick={() => navigate(`/tally/${sheet.id}/edit`)}
+                className="text-xs font-semibold text-blue-700 hover:text-blue-900 underline text-left"
+              >
+                + Lampirkan Berita Acara via Edit
+              </button>
+            )}
           </div>
         )}
 

@@ -28,15 +28,17 @@ export default function TallyPrint() {
       <div className="no-print mx-auto mb-4 flex max-w-[210mm] items-center justify-between gap-3 px-2">
         <span className="text-sm text-slate-600">Pratinjau cetak A4 · gunakan "Simpan sebagai PDF" untuk menyimpan.</span>
         <div className="flex items-center gap-2">
-          <a
-            href={`/tally/${sheet.id}/print-ba`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3.5 py-2 text-sm font-semibold text-white hover:bg-blue-800 shadow-xs"
-            data-testid="print-open-ba-button"
-          >
-            <FileText className="h-4 w-4" /> CETAK BERITA ACARA (BA)
-          </a>
+          {sheet.has_berita_acara && (
+            <a
+              href={`/tally/${sheet.id}/print-ba`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3.5 py-2 text-sm font-semibold text-white hover:bg-blue-800 shadow-xs"
+              data-testid="print-open-ba-button"
+            >
+              <FileText className="h-4 w-4" /> CETAK BERITA ACARA (BA)
+            </a>
+          )}
           <button onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-lg bg-[#0B2149] px-4 py-2 text-sm font-semibold text-white hover:bg-[#13306a]" data-testid="print-a4-trigger-button">
             <Printer className="h-4 w-4" /> PRINT TALLY SHEET
           </button>

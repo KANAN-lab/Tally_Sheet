@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import { Printer, CheckCircle2 } from "lucide-react";
+import { useParams, useNavigate } from "react-router-dom";
+import { Printer, FileQuestion, ArrowLeft } from "lucide-react";
 import { api, errMsg } from "@/lib/api";
 import { fmtDate } from "@/lib/format";
 
 export default function BeritaAcaraPrint() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [sheet, setSheet] = useState(null);
   const [error, setError] = useState("");
 
@@ -21,8 +22,53 @@ export default function BeritaAcaraPrint() {
   if (error) return <div className="p-10 text-rose-600">{error}</div>;
   if (!sheet) return <div className="p-10 text-slate-500">Memuat Formulir Berita Acara...</div>;
 
+  // Proteksi jika dokumen ini dibuat tanpa Berita Acara
+  if (!sheet.has_berita_acara) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6 text-slate-900 font-sans">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center space-y-4">
+          <div className="w-16 h-16 mx-auto rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600">
+            <FileQuestion className="h-8 w-8" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900">
+            Tidak Ada Berita Acara (BA)
+          </h2>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            Dokumen Tally Sheet <strong className="font-mono text-slate-900">{sheet.doc_no}</strong> tercatat sebagai kedatangan material <strong>Non-Berita Acara</strong> (Kedatangan Reguler / Domestik).
+          </p>
+          <div className="rounded-xl bg-slate-50 border border-slate-200 p-3.5 text-left text-xs space-y-1.5">
+            <div className="flex justify-between text-slate-600">
+              <span>No. Surat Jalan (SJ):</span>
+              <span className="font-mono font-bold text-slate-900">{sheet.delivery_note_no || "-"}</span>
+            </div>
+            <div className="flex justify-between text-slate-600">
+              <span>No. PO SAP:</span>
+              <span className="font-mono font-bold text-slate-900">{sheet.po_no || "-"}</span>
+            </div>
+            <div className="flex justify-between text-slate-600">
+              <span>Status Dokumen:</span>
+              <span className="font-bold text-blue-900 uppercase">{sheet.status}</span>
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-500 italic">
+            Formulir Berita Acara tidak dapat dicetak karena data inspeksi kontainer/armada belum pernah diinput untuk transaksi ini.
+          </p>
+          <div className="pt-2 flex justify-center gap-3">
+            <button
+              onClick={() => navigate(`/tally/${sheet.id}`)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-[#0B2149] hover:bg-[#13306a] text-white text-xs font-bold rounded-lg shadow-sm transition"
+            >
+              <ArrowLeft className="h-4 w-4" /> Kembali ke Detail Tally
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const ba = sheet.berita_acara || {};
-  const isImport = (ba.arrival_type || "import") === "import";
+  const isImport = ba.arrival_type === "import";
+  const isLocal = ba.arrival_type === "local";
   const itemsText = sheet.items?.map((it) => it.material_name).filter(Boolean).slice(0, 3).join(", ") || "-";
 
   // Tanggal & Hari
@@ -103,10 +149,10 @@ export default function BeritaAcaraPrint() {
               <span className={isImport ? "text-slate-950 font-bold" : "text-slate-500"}>KEDATANGAN IMPORT (KONTAINER)</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className={`inline-flex items-center justify-center w-4 h-4 border border-slate-900 rounded-xs text-[11px] font-black ${!isImport ? 'bg-slate-950 text-white' : 'bg-white text-transparent'}`}>
-                {!isImport ? "✓" : ""}
+              <span className={`inline-flex items-center justify-center w-4 h-4 border border-slate-900 rounded-xs text-[11px] font-black ${isLocal ? 'bg-slate-950 text-white' : 'bg-white text-transparent'}`}>
+                {isLocal ? "✓" : ""}
               </span>
-              <span className={!isImport ? "text-slate-950 font-bold" : "text-slate-500"}>KEDATANGAN LOKAL (TRUK / EKSPEDISI DOMESTIK)</span>
+              <span className={isLocal ? "text-slate-950 font-bold" : "text-slate-500"}>KEDATANGAN LOKAL (TRUK / EKSPEDISI DOMESTIK)</span>
             </div>
           </div>
 
@@ -136,7 +182,7 @@ export default function BeritaAcaraPrint() {
                   <td>:</td>
                   <td className="py-1">
                     <div className="flex items-center justify-between">
-                      <span className="font-mono font-bold text-slate-900">{ba.container_no || sheet.truck_plate || "-"}</span>
+                      <span className="font-mono font-bold text-slate-900">{ba.container_no || "-"}</span>
                       <span className="font-semibold text-slate-700">No Plat Mobil Trucking : <span className="font-mono font-bold">{sheet.truck_plate || "-"}</span></span>
                     </div>
                   </td>
@@ -186,7 +232,7 @@ export default function BeritaAcaraPrint() {
                       <td className="w-4">:</td>
                       <td>
                         <span className="font-medium text-slate-900">
-                          {ba.floor_before || "Rata, tidak ditemukan kebocoran, bersih, tidak berminyak"}
+                          {ba.floor_before || "-"}
                         </span>
                       </td>
                     </tr>
@@ -195,7 +241,7 @@ export default function BeritaAcaraPrint() {
                       <td>:</td>
                       <td>
                         <span className="font-medium text-slate-900">
-                          {ba.wall_before || "Tidak penyok, tidak baret, tidak bolong"}
+                          {ba.wall_before || "-"}
                         </span>
                       </td>
                     </tr>
@@ -213,7 +259,7 @@ export default function BeritaAcaraPrint() {
                       <td className="w-4">:</td>
                       <td>
                         <span className="font-medium text-slate-900">
-                          {ba.floor_after || "Rata, tidak ditemukan kebocoran"}
+                          {ba.floor_after || "-"}
                         </span>
                       </td>
                     </tr>
@@ -222,7 +268,7 @@ export default function BeritaAcaraPrint() {
                       <td>:</td>
                       <td>
                         <span className="font-medium text-slate-900">
-                          {ba.wall_after || "Tidak penyok, tidak baret, tidak bolong"}
+                          {ba.wall_after || "-"}
                         </span>
                       </td>
                     </tr>
@@ -243,33 +289,39 @@ export default function BeritaAcaraPrint() {
               <div>
                 <div className="flex items-baseline gap-2">
                   <span className="font-semibold text-slate-900">1. Penyusunan barang didalam container:</span>
-                  <span className="font-bold text-slate-900 uppercase">[{ba.cargo_arrangement || "Baik"}]</span>
+                  <span className="font-bold text-slate-900 uppercase">[{ba.cargo_arrangement || "-"}]</span>
                 </div>
-                <div className="ml-5 mt-0.5 text-slate-700">
-                  <span className="text-slate-500 italic">Jelaskan:</span> {ba.cargo_arrangement_notes || "Tersusun rapi dan kokoh di atas palet."}
-                </div>
+                {ba.cargo_arrangement_notes && (
+                  <div className="ml-5 mt-0.5 text-slate-700">
+                    <span className="text-slate-500 italic">Jelaskan:</span> {ba.cargo_arrangement_notes}
+                  </div>
+                )}
               </div>
 
               {/* Point 2 */}
               <div>
                 <div className="flex items-baseline gap-2">
                   <span className="font-semibold text-slate-900">2. Fisik barang dalam kondisi baik, tidak ditemukan pecah / bocor:</span>
-                  <span className="font-bold text-slate-900 uppercase">[{ba.cargo_condition || "Baik"}]</span>
+                  <span className="font-bold text-slate-900 uppercase">[{ba.cargo_condition || "-"}]</span>
                 </div>
-                <div className="ml-5 mt-0.5 text-slate-700">
-                  <span className="text-slate-500 italic">Jelaskan:</span> {ba.cargo_condition_notes || "Kemasan fisik utuh, kering, dan segel kemasan baik."}
-                </div>
+                {ba.cargo_condition_notes && (
+                  <div className="ml-5 mt-0.5 text-slate-700">
+                    <span className="text-slate-500 italic">Jelaskan:</span> {ba.cargo_condition_notes}
+                  </div>
+                )}
               </div>
 
               {/* Point 3 */}
               <div>
                 <div className="flex items-baseline gap-2">
                   <span className="font-semibold text-slate-900">3. Jumlah fisik barang sesuai dengan Packing List:</span>
-                  <span className="font-bold text-slate-900 uppercase">[{ba.cargo_qty_match || "Sesuai"}]</span>
+                  <span className="font-bold text-slate-900 uppercase">[{ba.cargo_qty_match || "-"}]</span>
                 </div>
-                <div className="ml-5 mt-0.5 text-slate-700">
-                  <span className="text-slate-500 italic">Jelaskan:</span> {ba.cargo_qty_notes || "Jumlah hitungan fisik lengkap dan sesuai packing list."}
-                </div>
+                {ba.cargo_qty_notes && (
+                  <div className="ml-5 mt-0.5 text-slate-700">
+                    <span className="text-slate-500 italic">Jelaskan:</span> {ba.cargo_qty_notes}
+                  </div>
+                )}
               </div>
             </div>
           </div>

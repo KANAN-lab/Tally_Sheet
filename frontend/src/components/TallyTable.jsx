@@ -103,15 +103,17 @@ export default function TallyTable({ items, startIndex = 0, onChanged, extended,
               >
                 <Eye className="h-3.5 w-3.5" /> Detail
               </button>
-              <button
-                type="button"
-                onClick={() => openBeritaAcaraPrint(s.id)}
-                className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
-                title="Cetak Berita Acara (BA)"
-                data-testid={`${testId}-print-ba-mobile-${s.doc_no}`}
-              >
-                <FileText className="h-3.5 w-3.5" /> Cetak BA
-              </button>
+              {s.has_berita_acara && (
+                <button
+                  type="button"
+                  onClick={() => openBeritaAcaraPrint(s.id)}
+                  className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                  title="Cetak Berita Acara (BA)"
+                  data-testid={`${testId}-print-ba-mobile-${s.doc_no}`}
+                >
+                  <FileText className="h-3.5 w-3.5" /> Cetak BA
+                </button>
+              )}
               {canEdit(s, user) && (
                 <button
                   type="button"
@@ -209,13 +211,13 @@ export default function TallyTable({ items, startIndex = 0, onChanged, extended,
                         <Printer className="h-4 w-4" />
                       </IconBtn>
                     )}
-                    {extended && (
+                    {extended && s.has_berita_acara && (
                       <IconBtn
-                        title="Cetak Berita Acara (BA)"
+                        title={`Cetak Berita Acara (${s.ba_qa_doc_no || "BA"})`}
                         onClick={() => openBeritaAcaraPrint(s.id)}
                         testId={`${testId}-print-ba-${s.doc_no}`}
                       >
-                        <FileText className={`h-4 w-4 ${s.has_berita_acara ? "text-blue-700" : "text-slate-400 hover:text-blue-700"}`} />
+                        <FileText className="h-4 w-4 text-blue-700 hover:text-blue-900" />
                       </IconBtn>
                     )}
                     {extended && (
