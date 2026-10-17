@@ -1824,6 +1824,29 @@ class WorkflowTransitionInput(BaseModel):
     gr_no: Optional[str] = ""
     qc_notes: Optional[str] = ""
 
+class BeritaAcaraAttachInput(BaseModel):
+    arrival_type: str = "import"  # "import" | "local"
+    container_no: Optional[str] = ""
+    seal_no: Optional[str] = ""
+    seal_condition: Optional[str] = "Baik / Utuh"
+    container_temp_type: Optional[str] = "Frozen"
+    temp_celsius: Optional[str] = ""
+    floor_before: Optional[str] = ""
+    wall_before: Optional[str] = ""
+    floor_after: Optional[str] = ""
+    wall_after: Optional[str] = ""
+    cargo_arrangement: Optional[str] = "Baik"
+    cargo_arrangement_notes: Optional[str] = ""
+    cargo_condition: Optional[str] = "Baik, tidak ditemukan pecah / bocor"
+    cargo_condition_notes: Optional[str] = ""
+    cargo_qty_match: Optional[str] = "Sesuai dengan Packing List"
+    cargo_qty_notes: Optional[str] = ""
+    location: Optional[str] = "Cibitung"
+    driver_name: Optional[str] = ""
+    spv_name: Optional[str] = ""
+    manager_name: Optional[str] = ""
+    ba_qa_doc_no: Optional[str] = None
+
 def validate_items(conn, items: List[TallyItemInput], action: str, sheet_id: Optional[str] = None):
     # Fetch settings
     s_row = conn.execute("SELECT required_json, duplicate_rule FROM settings WHERE id = 'global'").fetchone()
@@ -2551,6 +2574,120 @@ def cancel_tally_sheet(sheet_id: str, req: CancelRequest, user: dict = Depends(g
     }, user, notes=req.reason.strip(), extra={"previous_status": sheet["status"]})
 
     return {"message": "Tally sheet berhasil dibatalkan"}
+
+@app.post("/api/tally-sheets/{sheet_id}/berita-acara")
+def attach_or_update_berita_acara(sheet_id: str, req: BeritaAcaraAttachInput, user: dict = Depends(get_current_user)):
+    conn = get_db()
+    sync_from_supabase_if_needed(conn, sheet_id=sheet_id)
+    sheet_row = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
+    if not sheet_row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Tally sheet tidak ditemukan.")
+
+    sheet = dict(sheet_row)
+    if sheet["status"] == "cancelled":
+        conn.close()
+        raise HTTPException(status_code=400, detail="Dokumen yang dibatalkan tidak dapat ditambahkan Berita Acara.")
+
+    cont_no = (req.container_no or "").strip()
+    if not cont_no:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Nomor Container / Box Truk wajib diisi.")
+
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    actual_id = sheet["id"]
+
+    ba_qa_code = QADocumentRegistry.resolve_ba_code(req.ba_qa_doc_no or sheet.get("ba_qa_doc_no"), conn)
+    ba_rec = BeritaAcaraRecord(req.dict())
+    ba_json = json.dumps(ba_rec.to_dict())
+
+    conn.execute("""
+        UPDATE tally_sheets
+        SET has_berita_acara = 1,
+            ba_qa_doc_no = ?,
+            ba_data_json = ?,
+            ba_container_no = ?,
+            ba_seal_no = ?,
+            ba_seal_condition = ?,
+            ba_container_temp = ?,
+            updated_at = ?,
+            updated_by = ?,
+            updated_by_name = ?
+        WHERE id = ?
+    """, (
+        ba_qa_code,
+        ba_json,
+        ba_rec.container_no,
+        ba_rec.seal_no,
+        ba_rec.seal_condition,
+        ba_rec.container_temp_type,
+        now,
+        user["id"],
+        user["name"],
+        actual_id
+    ))
+
+    rev_count = conn.execute("SELECT count(*) FROM tally_history WHERE sheet_id = ?", (actual_id,)).fetchone()[0] or 1
+    hist_id = str(uuid.uuid4())
+    is_update = bool(sheet.get("has_berita_acara"))
+    action_type = "update_berita_acara" if is_update else "attach_berita_acara"
+    hist_desc = f"Berita Acara {ba_rec.arrival_type.upper()} ({ba_qa_code}) {'diperbarui' if is_update else 'dilampirkan'} oleh {user['name']}"
+
+    conn.execute("""
+        INSERT INTO tally_history (id, sheet_id, action, revision, at, by_name, by_id, by_role, from_status, to_status, category, reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Berita Acara', ?)
+    """, (
+        hist_id,
+        actual_id,
+        action_type,
+        rev_count + 1,
+        now,
+        user["name"],
+        user["id"],
+        user.get("role", "checker"),
+        sheet["status"],
+        sheet["status"],
+        hist_desc
+    ))
+
+    conn.commit()
+    conn.close()
+
+    sync_tally_to_supabase({
+        "id": actual_id,
+        "has_berita_acara": 1,
+        "ba_qa_doc_no": ba_qa_code,
+        "ba_data_json": ba_json,
+        "ba_container_no": ba_rec.container_no,
+        "ba_seal_no": ba_rec.seal_no,
+        "ba_seal_condition": ba_rec.seal_condition,
+        "ba_container_temp": ba_rec.container_temp_type,
+        "updated_at": now,
+        "updated_by": user["id"],
+        "updated_by_name": user["name"]
+    }, None, {
+        "id": hist_id,
+        "sheet_id": actual_id,
+        "action": action_type,
+        "revision": rev_count + 1,
+        "at": now,
+        "by_name": user["name"],
+        "by_id": user["id"],
+        "by_role": user.get("role", "checker"),
+        "from_status": sheet["status"],
+        "to_status": sheet["status"],
+        "category": "Berita Acara",
+        "reason": hist_desc
+    })
+
+    log_activity(user["id"], user["name"], action_type, "tally_sheet", actual_id, hist_desc)
+
+    return {
+        "message": f"Berita Acara berhasil {'diperbarui' if is_update else 'dilampirkan'}.",
+        "has_berita_acara": True,
+        "ba_qa_doc_no": ba_qa_code,
+        "berita_acara": ba_rec.to_dict()
+    }
 
 @app.get("/api/tally-sheets/{sheet_id}/history")
 def get_tally_history(sheet_id: str):

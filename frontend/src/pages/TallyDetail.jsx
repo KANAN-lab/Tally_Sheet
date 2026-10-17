@@ -13,6 +13,7 @@ import {
   FileText,
   History,
   Pencil,
+  Plus,
   Printer,
   RotateCcw,
   Send,
@@ -21,6 +22,7 @@ import {
   User,
   XCircle
 } from "lucide-react";
+import BeritaAcaraModal from "@/components/BeritaAcaraModal";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -125,6 +127,7 @@ export default function TallyDetail() {
   const [holdCategories, setHoldCategories] = useState([]);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [baModalOpen, setBaModalOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
@@ -361,6 +364,15 @@ export default function TallyDetail() {
               >
                 <FileText className="mr-1.5 h-4 w-4" /> CETAK BERITA ACARA (BA)
               </Button>
+            ) : sheet.status !== "cancelled" ? (
+              <Button
+                onClick={() => setBaModalOpen(true)}
+                className="bg-blue-700 hover:bg-blue-800 font-semibold text-xs text-white shadow-xs"
+                data-testid="tally-detail-attach-ba-top-button"
+                title="Lampirkan Berita Acara Penerimaan Barang (Import / Lokal)"
+              >
+                <Plus className="mr-1.5 h-4 w-4" /> + LAMPIRKAN BERITA ACARA
+              </Button>
             ) : (
               <Button
                 disabled
@@ -557,12 +569,23 @@ export default function TallyDetail() {
                   Berita Acara Penerimaan Barang {sheet.berita_acara?.arrival_type === "local" ? "(Truk Lokal / Domestik)" : "(Kontainer Import)"} {sheet.ba_qa_doc_no || sheet.ba_qa_meta?.code ? `(${sheet.ba_qa_doc_no || sheet.ba_qa_meta?.code})` : ""}
                 </span>
               </div>
-              <button
-                onClick={() => openBeritaAcaraPrint(sheet.id)}
-                className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 underline"
-              >
-                <Printer className="h-3.5 w-3.5" /> Buka Formulir Cetak
-              </button>
+              <div className="flex items-center gap-2">
+                {sheet.status !== "cancelled" && (
+                  <button
+                    onClick={() => setBaModalOpen(true)}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-700 hover:text-blue-800 underline mr-1"
+                    data-testid="detail-edit-ba-button"
+                  >
+                    <Pencil className="h-3 w-3" /> Edit Data BA
+                  </button>
+                )}
+                <button
+                  onClick={() => openBeritaAcaraPrint(sheet.id)}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 underline"
+                >
+                  <Printer className="h-3.5 w-3.5" /> Buka Formulir Cetak
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
@@ -600,18 +623,23 @@ export default function TallyDetail() {
         )}
 
         {!sheet.has_berita_acara && (
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-slate-600">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-slate-400"></span>
-              <span>Dokumen ini berstatus <strong>Non-Berita Acara</strong> (Kedatangan Reguler / Domestik).</span>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-slate-600">
+            <div className="flex items-center gap-2.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-slate-400 shrink-0"></span>
+              <div>
+                <span>Dokumen ini berstatus <strong>Non-Berita Acara</strong> (Kedatangan Reguler Domestik).</span>
+                <p className="text-[11px] text-slate-500 mt-0.5">Jika dibutuhkan Berita Acara pemeriksaan fisik kontainer/truk untuk audit atau klaim, Anda dapat melampirkannya langsung.</p>
+              </div>
             </div>
-            {canEdit(sheet, user) && (
-              <button
-                onClick={() => navigate(`/tally/${sheet.id}/edit`)}
-                className="text-xs font-semibold text-blue-700 hover:text-blue-900 underline text-left"
+            {sheet.status !== "cancelled" && (
+              <Button
+                size="sm"
+                onClick={() => setBaModalOpen(true)}
+                className="bg-blue-700 hover:bg-blue-800 text-white font-semibold text-xs shrink-0 shadow-xs"
+                data-testid="detail-attach-ba-banner-button"
               >
-                + Lampirkan Berita Acara via Edit
-              </button>
+                <Plus className="mr-1 h-3.5 w-3.5" /> + Lampirkan Berita Acara
+              </Button>
             )}
           </div>
         )}
@@ -814,6 +842,26 @@ export default function TallyDetail() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <BeritaAcaraModal
+        sheet={sheet}
+        isOpen={baModalOpen}
+        onClose={() => setBaModalOpen(false)}
+        onSuccess={(updated) => {
+          setSheet((prev) => ({
+            ...prev,
+            has_berita_acara: true,
+            ba_qa_doc_no: updated.ba_qa_doc_no,
+            ba_data_json: JSON.stringify(updated.berita_acara),
+            berita_acara: updated.berita_acara,
+            ba_container_no: updated.berita_acara?.container_no,
+            ba_seal_no: updated.berita_acara?.seal_no,
+            ba_seal_condition: updated.berita_acara?.seal_condition,
+            ba_container_temp: updated.berita_acara?.container_temp_type
+          }));
+          load();
+        }}
+      />
     </div>
   );
 }
