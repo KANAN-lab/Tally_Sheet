@@ -402,7 +402,7 @@ INSERT INTO public.materials (id, code, name, extra_json, active, version_id, cr
 ('57a06970-2e8b-430e-b0ca-fb242f6f9f3a', '40000062', 'APPLE JUICE CONCENTRATE', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('2c4c36a9-47d9-40e5-bba7-bce150d3dc59', '40000065', 'BLUEBERRY JUICE CONCENTRATE', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('53523265-e3c1-4c6a-9e3b-e184371b5581', '40000069', 'COCONUT MILK POWDER', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO public.materials (id, code, name, extra_json, active, version_id, created_at, updated_at) VALUES
 ('a1a8b3fe-5ebd-47b0-87f6-c33c1b1d0cc3', '40000070', 'CRANBERRY JUICE CONCENTRATE', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('deff7f35-4f5e-4989-bbd7-54205cd6e447', '40000071', 'DAIRY TYPE ORANGE JUICE CONCENTRATE', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
@@ -454,7 +454,7 @@ INSERT INTO public.materials (id, code, name, extra_json, active, version_id, cr
 ('4e4d150f-8253-4db9-ad83-926b29895a22', '40000155', 'YOGURT CULTURE FD-DVS YC-X11', '{"Material Type": "ZRAW", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('76135d83-886d-4f69-a8f5-93cc34a00082', '40000156', 'YOGURT CULTURE FD-DVS-ST BODY 3 YO FLEX', '{"Material Type": "ZRAW", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('67b9c795-093a-4044-9cbc-9d31d434749f', '40000158', 'FRYING SHORTHENING', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO public.materials (id, code, name, extra_json, active, version_id, created_at, updated_at) VALUES
 ('f7539f76-be64-4eb2-b134-717c2f7143f2', '40000159', 'HARDENER', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('db744cea-244c-4c2a-833c-2c30336e826a', '40000160', 'NON DAIRY CREAMER', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
@@ -506,7 +506,7 @@ INSERT INTO public.materials (id, code, name, extra_json, active, version_id, cr
 ('1fdda2f1-4a7a-42e5-be53-3c4dfc064c90', '40000231', 'FLAVOUR JAFFA ORANGE EMULSION D-1235', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "DP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('5d2a6fd7-aca7-4e20-93f2-766050a1cf54', '40000233', 'FLAVOUR APPLE 502302C', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('fe9059a5-144e-41b1-844b-2de684522e54', '40000235', 'FLAVOUR PINEAPPLE 590.029/C', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "DP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO public.materials (id, code, name, extra_json, active, version_id, created_at, updated_at) VALUES
 ('0a62d176-1e3c-4311-b688-762dfd252a82', '40000240', 'FLAVOUR STRAWBERRY E23056693', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "DP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('2821f52a-24f1-4a7d-b624-f2f008871f0e', '40000241', 'FLAVOUR CHOCOLATE R0106715', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
@@ -558,7 +558,7 @@ INSERT INTO public.materials (id, code, name, extra_json, active, version_id, cr
 ('34458c73-ba44-4754-8a6c-d38869b272d1', '40000301', 'STABILIZER YO TEX 5403T', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('f9a4eb98-cc97-4949-9a86-0258b15545ef', '40000302', 'SEMI REFINED CARRAGEENAN', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('c0961954-8584-4342-a759-253052cd505c', '40000303', 'XANTHAN GUM', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO public.materials (id, code, name, extra_json, active, version_id, created_at, updated_at) VALUES
 ('25e58d27-b0d1-47b7-bfa4-67c73511fb59', '40000304', 'JELLY POWDER', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('078c9950-e61f-4261-ac0c-d83380b79478', '40000305', 'GELLAN GUM', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
@@ -610,7 +610,7 @@ INSERT INTO public.materials (id, code, name, extra_json, active, version_id, cr
 ('335b8807-42a9-4aea-8a48-3d46efd14f65', '40000508', 'FLAVOUR MANGO E22133653', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('08555d7d-9890-4309-ba4d-4d5a87458ec4', '40000511', 'FLAVOUR COCOA OIL SOLUBLE E22098699', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('8353ccdd-a56a-4e7d-8013-289d60d95b6e', '40000514', 'SEMI REFINED CARRAGEENAN CAPPIOGUM BA45H', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO public.materials (id, code, name, extra_json, active, version_id, created_at, updated_at) VALUES
 ('dec95e03-0072-4244-9484-a4eb1f11fafc', '40000518', 'CALCIUM LACTATE', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('c049c370-1fb4-4754-86ea-397aa02a85af', '40000520', 'FROZEN PEACH DICE', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "DP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
@@ -662,7 +662,7 @@ INSERT INTO public.materials (id, code, name, extra_json, active, version_id, cr
 ('a1c40ae6-0d4c-48c8-9fe4-a684cf1e49b4', '40000682', 'MILKFOAM 204', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('f9ba7111-f7ef-4548-904d-ed30404b8885', '40000683', 'FLAVOUR ALMOND 050013 901T', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "DP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('7ae48320-9502-400e-80e5-73e9bf6c4671', '40000692', 'FLAVOUR CHOCOLATE 599153T10', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO public.materials (id, code, name, extra_json, active, version_id, created_at, updated_at) VALUES
 ('d9fdc24d-6bf8-46d6-a700-4e7314698da0', '40000720', 'FLAVOUR SENSE CAPTURE COCOA SD E24248382', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('83bea78d-2111-4e97-9137-29f1303d7a79', '40000722', 'INSTANT COFFEE ACS 11-23', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
@@ -714,7 +714,7 @@ INSERT INTO public.materials (id, code, name, extra_json, active, version_id, cr
 ('f8e92b16-4ef7-4002-b9b8-255a771b36eb', '40000902', 'COCOA POWDER 350 DP 11', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('1ee00c08-408e-40d4-b21a-24265757f409', '40000905', 'COCOA POWDER GP 360 11', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('503f9892-6748-4ab8-af26-1e2e594a692e', '40000913', 'COCOA POWDER ALKALIZED DF 760-11', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO public.materials (id, code, name, extra_json, active, version_id, created_at, updated_at) VALUES
 ('37157d0f-26cb-48c5-b37e-e20e0d56a1a1', '40000921', 'COCOA POWDER G 960 11', '{"Material Type": "ZRAW", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('e062ac7f-d2b1-4ecf-972c-eca56f9287b7', '50000000', 'CARTON TOPPING 6X1KG', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
@@ -766,7 +766,7 @@ INSERT INTO public.materials (id, code, name, extra_json, active, version_id, cr
 ('282e647b-5591-4ed0-a9d4-0f595c45872c', '50000391', 'CARTON FRESH MILK PLAIN AF 12X946ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('19cb7d40-c815-45f0-964e-f91b68be0f46', '50000406', 'CARTON BROOKFARM MILK SOYA  AF 6X946ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('0a8a05da-c17c-4cba-a2fd-b57e1aa1f65f', '50000407', 'CARTON BROOKFARM MILK LOW FAT A+F6x946ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO public.materials (id, code, name, extra_json, active, version_id, created_at, updated_at) VALUES
 ('a9ef39e8-32bd-404e-a3af-5cc60b8b0c98', '50000408', 'CARTON BROOKFARM MILK STRAWB A+F 6x946ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('ba251e42-8abe-4f81-b1ff-50440ddab585', '50000409', 'CARTON BROOKFARM MILK CHOCO A+F 6x946ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
@@ -818,7 +818,7 @@ INSERT INTO public.materials (id, code, name, extra_json, active, version_id, cr
 ('63b675cb-c89e-4394-9d74-6c1de236d238', '50000527', 'SLEEVE PAPER UHT MILK CHOCOLATE 200ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('accfcba9-8203-469a-947e-163b7602c31b', '50000530', 'EG FOIL DIA APPLE JUICE 946ML P2', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('bec2e63e-7ccd-4584-a950-750ab781bd25', '50000532', 'EG FOIL DIA BLUEBERRY JUICE 946ML P2', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO public.materials (id, code, name, extra_json, active, version_id, created_at, updated_at) VALUES
 ('7c656b3b-563d-4a22-a41d-4e288b4fc792', '50000534', 'EG FOIL DIA GUAVA JUICE 946ML P2', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('c70dbc3e-4fe6-4519-9f32-928e9477cdae', '50000536', 'EG FOIL DIA MANGO JUICE 946ML P2', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
@@ -870,7 +870,7 @@ INSERT INTO public.materials (id, code, name, extra_json, active, version_id, cr
 ('b601f537-8c32-469b-bf2c-8756743f84c3', '50000683', 'PLASTIC PE 38CMX38/25CMX80MIC (MEISES)', '{"Material Type": "ZPKG", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('cc9ce58b-9bed-42f2-b594-22569ef210a0', '50000684', 'ALU BAG CHOCOLATE COMPOUND 1KG', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('327c4c6c-989e-4c58-a63e-723b07d483e7', '50000685', 'ALU BAG CHOCOLATE COMPOUND 5KG', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO public.materials (id, code, name, extra_json, active, version_id, created_at, updated_at) VALUES
 ('1efefbe0-142e-4361-86f8-6cda0dd24667', '50000687', 'ALU BAG CHOCOLATE 250GR', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('23487a7f-fc97-468e-bb8e-effd3db38079', '50000688', 'ALU SEAL CUP YOGURT MANGO 80ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
@@ -922,7 +922,7 @@ INSERT INTO public.materials (id, code, name, extra_json, active, version_id, cr
 ('aa9ae3a5-ffc0-4bd4-a3fd-12600cfda717', '50000848', 'CARTON SLIM LEAF UHT CHOCOLATE 200ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('b216c2af-c1cf-4f00-acea-85faaa2c746d', '50000849', 'CARTON SLIM LEAF UHT FULL CREAM 200 ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('92bc8ae1-c628-43cb-9676-7f3c8291cc2b', '50000853', 'CARTON STIRRED YOGURT 12X80ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO public.materials (id, code, name, extra_json, active, version_id, created_at, updated_at) VALUES
 ('0d6de345-4ce7-44eb-9de4-121d4be76164', '50000856', 'TBA SLIM LEAF UHT FULL CREAM 200 ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('7ffcd4ae-becc-48f9-ac58-c045aac28382', '50000857', 'TBA SLIM LEAF UHT MILK CHOCOLATE 200 ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
@@ -974,7 +974,7 @@ INSERT INTO public.materials (id, code, name, extra_json, active, version_id, cr
 ('392314f0-f3b8-471c-ad07-b0b1b7814818', '50001087', 'STICKER WAFER CONE 10X5G', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('84076915-a913-4e04-b3a7-f9ad3a41112b', '50001088', 'PLASTIC CONTAINER SET YOGURT 500ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('12b57ed8-48d9-4c9a-be91-7d3426642b45', '50001089', 'PLASTIC CONTAINER SET YOGURT 1000ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO public.materials (id, code, name, extra_json, active, version_id, created_at, updated_at) VALUES
 ('db80f00f-2a49-432c-a5c3-8d05b9a9a36f', '50001090', 'PLASTIC CONTAINER STIR YOGURT PLAIN 1L', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('aa6d9c3f-d74e-4cc0-b2cf-80d3ee2a8cf5', '50001091', 'PLASTIC LID STIR YOGURT PLAIN 1L', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
@@ -1026,7 +1026,7 @@ INSERT INTO public.materials (id, code, name, extra_json, active, version_id, cr
 ('9c1aca96-96f4-4e02-9d93-bc85b4274574', '50001220', 'TBA PAPER DIAMOND UHT JUICE GUAVA 200ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('c441cb79-a7e6-4a3a-b4d9-a2fdb31b7c69', '50001221', 'TBA PAPER DIAMOND UHT JUICE ORANGE 200ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('c25d79ad-f6d0-4085-a409-c75fb732d449', '50001222', 'TBA PAPER DIAMOND UHT JUICE APPLE 200ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO public.materials (id, code, name, extra_json, active, version_id, created_at, updated_at) VALUES
 ('147772bf-559a-4cca-8068-efb2885ad896', '50001223', 'CONTAINER PLASTIC WHITE SQUARE 8L +LID', '{"Material Type": "ZPKG", "BuN": "SET", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('23e2fc2d-1476-4632-be8c-f5ae0407ead1', '50001224', 'CONTAINER PLASTIC RED 8L +LID', '{"Material Type": "ZPKG", "BuN": "SET", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
@@ -1078,7 +1078,7 @@ INSERT INTO public.materials (id, code, name, extra_json, active, version_id, cr
 ('0f67b812-7a1e-455a-a985-086a035d49af', '50001319', 'STICKER SEMICOATED WHITE BLANK 75X55 MM', '{"Material Type": "ZPKG", "BuN": "ROL", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('ce6475ee-6fbc-461a-a9fb-f1f587980d60', '50001320', 'SHRINK LABEL JJ APPLE 1500ML', '{"Material Type": "ZPKG", "BuN": "ROL", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('a710ffc6-3d0a-47bf-8d77-73f5a23db2ec', '50001322', 'SHRINK LABEL JJ MANGO 1500ML', '{"Material Type": "ZPKG", "BuN": "ROL", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO public.materials (id, code, name, extra_json, active, version_id, created_at, updated_at) VALUES
 ('5d4b78b0-c967-4477-a036-c97e44c88f78', '50001323', 'SHRINK LABEL JJ ORANGE 1500ML', '{"Material Type": "ZPKG", "BuN": "ROL", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('c3e378f0-f55a-4eaa-86fa-4c38c154ff86', '50001325', 'SHRINK LABEL JJ PINK GUAVA 1500ML', '{"Material Type": "ZPKG", "BuN": "ROL", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
@@ -1130,7 +1130,7 @@ INSERT INTO public.materials (id, code, name, extra_json, active, version_id, cr
 ('bc6011e2-4244-4455-b8a6-3357be0c0db4', '50001478', 'CARTON UHT TBA FULL CREAM 125ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('2259d327-b051-4bec-b618-b875676fe8e3', '50001479', 'CARTON IC CHOCODIP 30X64 ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('abc70ff3-b8d7-41a7-b45e-5119baad4d8d', '50001480', 'CARTON SLIM LEAF UHT STRAWBERRY 200ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO public.materials (id, code, name, extra_json, active, version_id, created_at, updated_at) VALUES
 ('90c2e4ba-32cf-4aca-a7d6-767800fd7342', '50001481', 'CARTON IC MAGIC 30X50ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('54b2bdcd-455b-4fba-bfa2-63781bccbd15', '50001486', 'CARTON DIAMOND JUICE AF 6X946ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
@@ -1182,7 +1182,7 @@ INSERT INTO public.materials (id, code, name, extra_json, active, version_id, cr
 ('4d549cd1-75d1-47cf-8e06-83cda9b23af0', '50001618', 'PLASTIC PLO30 IC LOLLY POP ORANGE', '{"Material Type": "ZPKG", "BuN": "ROL", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('475deada-d824-4d07-8109-d0cf571583b6', '50001619', 'CARTON POLAR POP 30X50ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('82da218e-5660-4952-91e7-398bb7801d9e', '50001620', 'CARTON FRUTTY POP 30X50ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO public.materials (id, code, name, extra_json, active, version_id, created_at, updated_at) VALUES
 ('ba59ade2-9bca-4795-a232-978d6ed4357c', '50001621', 'SHRINK LABEL JJ MANGO 200ML', '{"Material Type": "ZPKG", "BuN": "ROL", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('9d71dbc0-ffe4-49f8-9a8e-d16af79af0b0', '50001624', 'PLASTIC PLO30 IC POLAR POP CHOCO VANILLA', '{"Material Type": "ZPKG", "BuN": "ROL", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
@@ -1234,7 +1234,7 @@ INSERT INTO public.materials (id, code, name, extra_json, active, version_id, cr
 ('7e7ae3b3-d832-4060-ba7c-4938e1c28750', '50001747', 'TBA PAPER ALMOND MATCHA BF SL 200ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('7f1b48e9-d9eb-4142-b1b9-77a7f8da8c4c', '50001748', 'TBA PAPER ALMOND SALTED CARA BF SL 200ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('af293535-3b59-4aac-9734-9807ce5eefc9', '50001749', 'CARTON SLIM LEAF ALMOND DRINK 24X200ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO public.materials (id, code, name, extra_json, active, version_id, created_at, updated_at) VALUES
 ('d666e79b-c627-447c-926f-364517698403', '50001750', 'PLASTIC PE 50CMX75CMX100MIC (POWDER MIX)', '{"Material Type": "ZPKG", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('d5fcc71c-19d5-423e-91a9-f0348dc848ce', '50001765', 'TBA PAPER UHT MILK FULL CREAM ISAM 125ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
@@ -1286,7 +1286,7 @@ INSERT INTO public.materials (id, code, name, extra_json, active, version_id, cr
 ('aa76fa72-789f-4b1e-b70b-d740dccab214', '50001927', 'U-SHAPE STRAW 200ML 8MM', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('a3670bd9-5cb1-4e91-9e3e-dd068d9537fc', '50001937', 'CARTON SLEEVE CB12 UHT MILK JELLY 200ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('93e4a536-3d7d-4285-bf6c-4db297ad491b', '50001940', 'CARTON SLEEVE CB12 UHT LYCHEE 200ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO public.materials (id, code, name, extra_json, active, version_id, created_at, updated_at) VALUES
 ('428f2e38-3d5a-4e8f-8c1b-dc78fb7becdf', '50001941', 'SLEEVE PAPER CB12 UHT MJ WTMELON 200ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('24aca68b-0e9d-404f-8fe0-8b99a30a45a9', '50001943', 'SLEEVE PAPER CB12 UHT MJ GRAPE 200ML', '{"Material Type": "ZPKG", "BuN": "PC", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
@@ -1338,7 +1338,7 @@ INSERT INTO public.materials (id, code, name, extra_json, active, version_id, cr
 ('085e0100-1ae3-4154-a28e-6a7c5854ff71', '60000079', 'INTEND-001', '{"Material Type": "ZSFG", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('db66c854-c3e7-43ac-89cb-c8a041c960af', '60000080', 'APPROACH-001', '{"Material Type": "ZSFG", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('86d79f7b-6922-4020-9dd0-df73f064aee1', '60000081', 'IMPOSING-001', '{"Material Type": "ZSFG", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO public.materials (id, code, name, extra_json, active, version_id, created_at, updated_at) VALUES
 ('124813ba-f73f-4b25-9324-e8142505a87d', '60000083', 'ENDOW-001', '{"Material Type": "ZSFG", "BuN": "KG", "Storage location": "DP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('7f75d78d-83ad-469a-9450-24f713220ff3', '60000084', 'WONT-001', '{"Material Type": "ZSFG", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
