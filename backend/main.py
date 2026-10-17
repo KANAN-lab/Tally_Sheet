@@ -2812,7 +2812,7 @@ def get_reports_summary(
             ts.doc_no, ts.delivery_note_no, ts.po_no, ts.truck_plate, ts.arrival_date,
             ts.status, ts.created_by_name, ts.updated_by_name, ts.qc_by_name, ts.qc_at,
             ts.pending_category, ts.pending_reason, ts.created_at,
-            ts.has_berita_acara, ts.ba_no, ts.ba_qa_doc_no
+            ts.has_berita_acara, ts.ba_qa_doc_no
         FROM tally_sheets ts
         JOIN tally_items ti ON ts.id = ti.sheet_id
         WHERE {where_str}
@@ -2874,7 +2874,7 @@ def get_reports_summary(
             ts.doc_no, ts.delivery_note_no, ts.po_no, ts.truck_plate, ts.arrival_date,
             ts.status, ts.pending_category, ts.pending_reason,
             ts.created_by_name, ts.updated_by_name, ts.created_at,
-            ts.has_berita_acara, ts.ba_no, ts.ba_qa_doc_no
+            ts.has_berita_acara, ts.ba_qa_doc_no
         FROM tally_sheets ts
         JOIN tally_items ti ON ts.id = ti.sheet_id
         WHERE ({where_str}) AND (ts.status IN ('hold_admin', 'hold_qc', 'cancelled') OR ts.pending_category != '' OR ts.pending_reason != '')
