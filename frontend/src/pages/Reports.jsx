@@ -36,20 +36,32 @@ import { api, downloadReportExcel, errMsg } from "@/lib/api";
 
 const LIMIT = 20;
 
+const getPastDateStr = (daysAgo) => {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 export default function Reports() {
+  const initialStartDate = getPastDateStr(7);
+  const initialEndDate = getPastDateStr(0);
+
   const [activeTab, setActiveTab] = useState("traceability");
-  const [activePreset, setActivePreset] = useState("all");
+  const [activePreset, setActivePreset] = useState("week");
   const [previewSheetId, setPreviewSheetId] = useState(null);
   const [filters, setFilters] = useState({
-    start_date: "",
-    end_date: "",
+    start_date: initialStartDate,
+    end_date: initialEndDate,
     status: "all",
     supplier: "",
     q: ""
   });
   const [applied, setApplied] = useState({
-    start_date: "",
-    end_date: "",
+    start_date: initialStartDate,
+    end_date: initialEndDate,
     status: "all",
     supplier: "",
     q: ""

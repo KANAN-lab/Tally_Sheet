@@ -2287,6 +2287,8 @@ def validate_items(conn, items: List[TallyItemInput], action: str, sheet_id: Opt
 def get_tally_sheets(
     q: str = "",
     date: str = "",
+    start_date: str = "",
+    end_date: str = "",
     material: str = "",
     pic: str = "",
     status: str = "",
@@ -2304,8 +2306,15 @@ def get_tally_sheets(
         q_wild = f"%{q.strip()}%"
         params.extend([q_wild, q_wild, q_wild, q_wild, q_wild, q_wild, q_wild])
     if date.strip():
-        where_clauses.append("ts.created_at LIKE ?")
-        params.append(f"{date.strip()}%")
+        where_clauses.append("(ts.arrival_date = ? OR (ts.arrival_date = '' AND ts.created_at LIKE ?))")
+        params.extend([date.strip(), f"{date.strip()}%"])
+    else:
+        if start_date.strip():
+            where_clauses.append("(CASE WHEN ts.arrival_date != '' THEN ts.arrival_date ELSE substr(ts.created_at, 1, 10) END >= ?)")
+            params.append(start_date.strip())
+        if end_date.strip():
+            where_clauses.append("(CASE WHEN ts.arrival_date != '' THEN ts.arrival_date ELSE substr(ts.created_at, 1, 10) END <= ?)")
+            params.append(end_date.strip())
     if material.strip():
         where_clauses.append("ts.id IN (SELECT sheet_id FROM tally_items WHERE material_code LIKE ?)")
         params.append(f"%{material.strip()}%")
