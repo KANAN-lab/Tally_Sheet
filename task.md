@@ -15,8 +15,9 @@ Dokumen ini melacak status pengerjaan fitur, perbaikan bug, arsitektur sistem, d
 | **Manajemen Pengguna & Hak Akses** | 4 | 0 | 4 |
 | **Perbaikan UI/UX Laporan & Audit** | 6 | 0 | 6 |
 | **Keamanan & Keandalan Fungsional** | 5 | 0 | 5 |
+| **Notification Management (In-App Supabase)** | 5 | 0 | 5 |
 | **Tindakan User & Pengujian Live** | 0 | 2 | 2 |
-| **Pengembangan Lanjutan (Backlog / Opsional)** | 1 | 1 | 2 |
+| **Pengembangan Lanjutan (Backlog / Opsional)** | 2 | 0 | 2 |
 
 ---
 
@@ -201,3 +202,47 @@ Berikut adalah usulan fitur lanjutan yang dapat diaktifkan jika diperlukan oleh 
     - Kolom `webhook_config_json` pada tabel `settings` SQLite & Supabase Cloud (`supabase_schema.sql`).
   - [x] **4. Panel UI Konfigurasi Webhook di Halaman Pengaturan (`/settings`)**:
     - Komponen Card 5 interaktif: Switch toggle On/Off, input URL target, generator Secret Key acak 32-karakter, checklist 7 event alur kerja dengan badge alur & deskripsi, tombol test ping dengan visual latency status, dan penyimpanan terintegrasi.
+
+---
+
+## 🔔 6. Roadmap Pelaksanaan: Notification Management (In-App Supabase)
+
+Rencana perancangan dan implementasi Notification Center in-app berbasis Supabase PostgreSQL & SQLite lokal:
+
+- [x] **Fase 1: Skema Database Non-Destruktif & Sinkronisasi Cloud**
+  - [x] Tambahkan DDL tabel `public.notifications` ke `supabase_schema.sql` dengan `CREATE TABLE IF NOT EXISTS` (aman untuk live data Supabase).
+  - [x] Buat indeks performa `idx_notifications_lookup` pada kolom `(target_role, target_user_id, is_read, created_at DESC)`.
+  - [x] Tambahkan auto-create tabel `notifications` pada inisialisasi SQLite lokal (`init_db` di `backend/main.py`).
+  - [x] Sinkronisasi dual-write (SQLite lokal + Supabase REST API `/rest/v1/notifications`).
+
+- [x] **Fase 2: Backend Service & Event Triggering**
+  - [x] Buat kelas OOP / helper `NotificationService` di `backend/main.py` / `domain.py`.
+  - [x] Pasang dispatch pemicu notifikasi otomatis pada setiap titik transisi status dokumen:
+    - `tally.submitted`: Kirim ke `target_role: warehouse_admin`.
+    - `tally.verified_to_qc`: Kirim ke `target_role: qc`.
+    - `tally.held`: Kirim ke PIC pembuat dokumen (`created_by_id`) dan `target_role: warehouse_admin`.
+    - `tally.unheld`: Kirim ke PIC pembuat dokumen dan `target_role: qc`.
+    - `tally.approved_stock_uu`: Kirim notifikasi sukses ke PIC pembuat dokumen.
+    - `tally.rejected`: Kirim notifikasi penolakan ke PIC pembuat dokumen dan `warehouse_admin`.
+    - `tally.returned_to_checker`: Kirim notifikasi revisi ke PIC pembuat dokumen.
+
+- [x] **Fase 3: REST API Endpoints Notifikasi**
+  - [x] `GET /api/notifications/unread-count`: Endpoint super-ringan untuk mengecek jumlah badge unread (`< 5ms`).
+  - [x] `GET /api/notifications`: Endpoint paginasi lazy-load daftar notifikasi relevan untuk user/role yang sedang login.
+  - [x] `PATCH /api/notifications/{id}/read`: Menandai satu notifikasi telah dibaca (`is_read = 1`).
+  - [x] `POST /api/notifications/mark-all-read`: Menandai semua notifikasi user/role sebagai telah dibaca.
+
+- [x] **Fase 4: Frontend UI Topbar (Menggantikan `DraftBell`)**
+  - [x] Ganti komponen `DraftBell` di `frontend/src/components/Topbar.jsx` menjadi `NotificationCenter`.
+  - [x] Tampilkan badge counter merah dengan micro-indicator jika ada notifikasi unread.
+  - [x] Popover interaktif dengan tabs ("Semua" dan "Belum Dibaca").
+  - [x] Desain item notifikasi dengan ikon status warna (Kuning = Hold, Biru = Review, Hijau = Approved, Merah = Rejected).
+  - [x] Format waktu relatif human-friendly (*"5 menit lalu"*, *"1 jam lalu"*).
+  - [x] Deep link: Mengklik notifikasi langsung membawa user ke `/tally/:id` dan otomatis menandai notif sebagai *read*.
+  - [x] Tombol *"Tandai Semua Dibaca"* di header popover.
+
+- [x] **Fase 5: Optimasi Polling & Data Retention**
+  - [x] Implementasi Smart Polling di frontend (interval 30–45 detik, otomatis pause saat tab browser tidak aktif / `document.hidden`).
+  - [x] Mekanisme pembersihan berkala (Auto-purge notifikasi `is_read = 1` yang berumur > 30 hari).
+  - [x] Pengujian menyeluruh (Unit/Build test & verifikasi end-to-end alur notifikasi antar-role).
+

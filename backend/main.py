@@ -95,6 +95,42 @@ def sync_tally_to_supabase(sheet_row: dict, items: list = None, history_row: dic
     except Exception as e:
         print("Notice: Supabase push warning:", e)
 
+def sync_notification_to_supabase(notif_row: dict):
+    if not SUPABASE_KEY or not SUPABASE_URL:
+        return
+    try:
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates"
+        }
+        requests.post(f"{SUPABASE_URL}/rest/v1/notifications", headers=headers, json=[notif_row], timeout=3)
+    except Exception as e:
+        print("Notice: Supabase notification push warning:", e)
+
+def sync_notification_read_to_supabase(notif_id: str = None, user_id: str = None, target_role: str = None):
+    if not SUPABASE_KEY or not SUPABASE_URL:
+        return
+    try:
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json"
+        }
+        if notif_id:
+            requests.patch(f"{SUPABASE_URL}/rest/v1/notifications?id=eq.{notif_id}", headers=headers, json={"is_read": 1}, timeout=3)
+        elif user_id or target_role:
+            query = []
+            if user_id:
+                query.append(f"target_user_id=eq.{user_id}")
+            if target_role:
+                query.append(f"target_role=eq.{target_role}")
+            q_str = "&".join(query)
+            requests.patch(f"{SUPABASE_URL}/rest/v1/notifications?{q_str}", headers=headers, json={"is_read": 1}, timeout=3)
+    except Exception as e:
+        print("Notice: Supabase notification read sync warning:", e)
+
 def sync_from_supabase_if_needed(conn, sheet_id: str = None):
     if not SUPABASE_KEY or not SUPABASE_URL:
         return
@@ -436,6 +472,22 @@ def init_db():
         details TEXT NOT NULL,
         created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS notifications (
+        id TEXT PRIMARY KEY,
+        target_role TEXT DEFAULT '',
+        target_user_id TEXT DEFAULT '',
+        doc_id TEXT DEFAULT '',
+        doc_no TEXT DEFAULT '',
+        category TEXT NOT NULL DEFAULT 'info',
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        action_url TEXT DEFAULT '',
+        is_read INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_notifications_lookup ON notifications(target_role, target_user_id, is_read, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);
     """)
 
     # Ensure columns exist in tally_items
@@ -1072,6 +1124,273 @@ class WebhookService:
 
         thread = threading.Thread(target=_send, daemon=True)
         thread.start()
+
+# ----------------- IN-APP NOTIFICATION SERVICE & ENDPOINTS -----------------
+class NotificationService:
+    @classmethod
+    def dispatch(cls, event: str, sheet_data: dict, actor: dict, notes: str = "", extra: dict = None):
+        """
+        Membuat record notifikasi in-app dan menyinkronkannya ke Supabase secara background.
+        """
+        def _process():
+            try:
+                conn = get_db()
+                doc_id = sheet_data.get("id") or sheet_data.get("sheet_id") or ""
+                doc_no = sheet_data.get("doc_no") or "Tally Sheet"
+                actor_name = actor.get("name", "Pengguna")
+                created_by_id = sheet_data.get("created_by") or ""
+                now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                action_url = f"/tally/{doc_id}"
+
+                records_to_create = []
+
+                if event == "tally.submitted":
+                    # Kirim ke role warehouse_admin
+                    records_to_create.append({
+                        "id": str(uuid.uuid4()),
+                        "target_role": "warehouse_admin",
+                        "target_user_id": "",
+                        "doc_id": doc_id,
+                        "doc_no": doc_no,
+                        "category": "submitted",
+                        "title": f"Draf Diserahkan: {doc_no}",
+                        "message": f"Checker {actor_name} telah menyerahkan dokumen untuk verifikasi.",
+                        "action_url": action_url,
+                        "is_read": 0,
+                        "created_at": now_iso
+                    })
+                elif event == "tally.verified_to_qc":
+                    # Kirim ke role qc
+                    truck = sheet_data.get("truck_plate") or ""
+                    truck_str = f" ({truck})" if truck else ""
+                    records_to_create.append({
+                        "id": str(uuid.uuid4()),
+                        "target_role": "qc",
+                        "target_user_id": "",
+                        "doc_id": doc_id,
+                        "doc_no": doc_no,
+                        "category": "qc_review",
+                        "title": f"Permintaan Uji Mutu: {doc_no}",
+                        "message": f"Admin {actor_name} telah memverifikasi dokumen kedatangan armada{truck_str}. Siap untuk inspeksi mutu.",
+                        "action_url": action_url,
+                        "is_read": 0,
+                        "created_at": now_iso
+                    })
+                elif event == "tally.held":
+                    cat = sheet_data.get("pending_category") or "Kendala Fisik/Dokumen"
+                    reason = notes or sheet_data.get("pending_reason") or "Tidak ada catatan"
+                    records_to_create.append({
+                        "id": str(uuid.uuid4()),
+                        "target_role": "warehouse_admin",
+                        "target_user_id": "",
+                        "doc_id": doc_id,
+                        "doc_no": doc_no,
+                        "category": "held",
+                        "title": f"Dokumen Ditahan: {doc_no}",
+                        "message": f"Ditahan oleh {actor_name} ({cat}): {reason}",
+                        "action_url": action_url,
+                        "is_read": 0,
+                        "created_at": now_iso
+                    })
+                    if created_by_id and created_by_id != actor.get("id"):
+                        records_to_create.append({
+                            "id": str(uuid.uuid4()),
+                            "target_role": "",
+                            "target_user_id": created_by_id,
+                            "doc_id": doc_id,
+                            "doc_no": doc_no,
+                            "category": "held",
+                            "title": f"Dokumen Anda Ditahan: {doc_no}",
+                            "message": f"Ditahan oleh {actor_name} ({cat}): {reason}",
+                            "action_url": action_url,
+                            "is_read": 0,
+                            "created_at": now_iso
+                        })
+                elif event == "tally.unheld":
+                    records_to_create.append({
+                        "id": str(uuid.uuid4()),
+                        "target_role": "warehouse_admin",
+                        "target_user_id": "",
+                        "doc_id": doc_id,
+                        "doc_no": doc_no,
+                        "category": "unheld",
+                        "title": f"Penahanan Dilepas: {doc_no}",
+                        "message": f"Status hold diselesaikan oleh {actor_name}. Catatan: {notes or 'Siap dilanjutkan'}",
+                        "action_url": action_url,
+                        "is_read": 0,
+                        "created_at": now_iso
+                    })
+                    if created_by_id and created_by_id != actor.get("id"):
+                        records_to_create.append({
+                            "id": str(uuid.uuid4()),
+                            "target_role": "",
+                            "target_user_id": created_by_id,
+                            "doc_id": doc_id,
+                            "doc_no": doc_no,
+                            "category": "unheld",
+                            "title": f"Status Hold Dilepas: {doc_no}",
+                            "message": f"Status hold pada dokumen Anda telah diselesaikan oleh {actor_name}.",
+                            "action_url": action_url,
+                            "is_read": 0,
+                            "created_at": now_iso
+                        })
+                elif event == "tally.approved_stock_uu":
+                    if created_by_id and created_by_id != actor.get("id"):
+                        records_to_create.append({
+                            "id": str(uuid.uuid4()),
+                            "target_role": "",
+                            "target_user_id": created_by_id,
+                            "doc_id": doc_id,
+                            "doc_no": doc_no,
+                            "category": "approved",
+                            "title": f"Mutu Lulus (Stock Ter-UU): {doc_no}",
+                            "message": f"QC {actor_name} telah meluluskan mutu fisik. Dokumen resmi Selesai.",
+                            "action_url": action_url,
+                            "is_read": 0,
+                            "created_at": now_iso
+                        })
+                    records_to_create.append({
+                        "id": str(uuid.uuid4()),
+                        "target_role": "warehouse_admin",
+                        "target_user_id": "",
+                        "doc_id": doc_id,
+                        "doc_no": doc_no,
+                        "category": "approved",
+                        "title": f"Mutu Lulus (Stock Ter-UU): {doc_no}",
+                        "message": f"QC {actor_name} meluluskan dokumen kedatangan {doc_no}.",
+                        "action_url": action_url,
+                        "is_read": 0,
+                        "created_at": now_iso
+                    })
+                elif event == "tally.rejected":
+                    reason = notes or "Tidak memenuhi standar mutu"
+                    if created_by_id and created_by_id != actor.get("id"):
+                        records_to_create.append({
+                            "id": str(uuid.uuid4()),
+                            "target_role": "",
+                            "target_user_id": created_by_id,
+                            "doc_id": doc_id,
+                            "doc_no": doc_no,
+                            "category": "rejected",
+                            "title": f"Mutu Ditolak (QC Reject): {doc_no}",
+                            "message": f"QC {actor_name} menolak kedatangan: {reason}",
+                            "action_url": action_url,
+                            "is_read": 0,
+                            "created_at": now_iso
+                        })
+                    records_to_create.append({
+                        "id": str(uuid.uuid4()),
+                        "target_role": "warehouse_admin",
+                        "target_user_id": "",
+                        "doc_id": doc_id,
+                        "doc_no": doc_no,
+                        "category": "rejected",
+                        "title": f"Mutu Ditolak (QC Reject): {doc_no}",
+                        "message": f"QC {actor_name} menolak kedatangan {doc_no}: {reason}",
+                        "action_url": action_url,
+                        "is_read": 0,
+                        "created_at": now_iso
+                    })
+                elif event == "tally.returned_to_checker":
+                    reason = notes or "Perlu perbaikan data fisik"
+                    if created_by_id:
+                        records_to_create.append({
+                            "id": str(uuid.uuid4()),
+                            "target_role": "",
+                            "target_user_id": created_by_id,
+                            "doc_id": doc_id,
+                            "doc_no": doc_no,
+                            "category": "returned",
+                            "title": f"Dokumen Dikembalikan: {doc_no}",
+                            "message": f"Admin {actor_name} mengembalikan dokumen ke Checker: {reason}",
+                            "action_url": action_url,
+                            "is_read": 0,
+                            "created_at": now_iso
+                        })
+
+                for rec in records_to_create:
+                    conn.execute("""
+                        INSERT INTO notifications (id, target_role, target_user_id, doc_id, doc_no, category, title, message, action_url, is_read, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        rec["id"], rec["target_role"], rec["target_user_id"], rec["doc_id"], rec["doc_no"],
+                        rec["category"], rec["title"], rec["message"], rec["action_url"], rec["is_read"], rec["created_at"]
+                    ))
+                conn.commit()
+                conn.close()
+
+                # Sync ke Supabase cloud setelah commit lokal sukses
+                for rec in records_to_create:
+                    sync_notification_to_supabase(rec)
+            except Exception as e:
+                print(f"Notice: Notification dispatch error ({event}):", e)
+
+        thread = threading.Thread(target=_process, daemon=True)
+        thread.start()
+
+@app.get("/api/notifications/unread-count")
+def get_unread_notification_count(user: dict = Depends(get_current_user)):
+    conn = get_db()
+    try:
+        user_id = user.get("id", "")
+        role = user.get("role", "")
+        row = conn.execute("""
+            SELECT count(*) as cnt FROM notifications
+            WHERE (target_user_id = ? OR target_role = ? OR target_role = 'all' OR (? = 'admin' AND target_role IN ('warehouse_admin', 'qc')))
+            AND is_read = 0
+        """, (user_id, role, role)).fetchone()
+        return {"unread": row["cnt"] if row else 0}
+    finally:
+        conn.close()
+
+@app.get("/api/notifications")
+def get_notifications(unread_only: bool = False, limit: int = 20, user: dict = Depends(get_current_user)):
+    conn = get_db()
+    try:
+        user_id = user.get("id", "")
+        role = user.get("role", "")
+        sql = """
+            SELECT * FROM notifications
+            WHERE (target_user_id = ? OR target_role = ? OR target_role = 'all' OR (? = 'admin' AND target_role IN ('warehouse_admin', 'qc')))
+        """
+        params = [user_id, role, role]
+        if unread_only:
+            sql += " AND is_read = 0"
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(max(1, min(limit, 50)))
+        
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+@app.patch("/api/notifications/{notif_id}/read")
+def mark_notification_read(notif_id: str, user: dict = Depends(get_current_user)):
+    conn = get_db()
+    try:
+        conn.execute("UPDATE notifications SET is_read = 1 WHERE id = ?", (notif_id,))
+        conn.commit()
+        sync_notification_read_to_supabase(notif_id=notif_id)
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+@app.post("/api/notifications/mark-all-read")
+def mark_all_notifications_read(user: dict = Depends(get_current_user)):
+    conn = get_db()
+    try:
+        user_id = user.get("id", "")
+        role = user.get("role", "")
+        conn.execute("""
+            UPDATE notifications SET is_read = 1
+            WHERE (target_user_id = ? OR target_role = ? OR target_role = 'all' OR (? = 'admin' AND target_role IN ('warehouse_admin', 'qc')))
+            AND is_read = 0
+        """, (user_id, role, role))
+        conn.commit()
+        sync_notification_read_to_supabase(user_id=user_id, target_role=role)
+        return {"status": "ok"}
+    finally:
+        conn.close()
 
 # ----------------- SETTINGS -----------------
 @app.get("/api/settings")
@@ -2219,9 +2538,10 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
     log_action = "submit_tally" if status == "waiting_admin" else ("create_tally" if status == "draft" else "finalize_tally")
     log_activity(user["id"], user["name"], log_action, "tally_sheet", sheet_id, f"Tally sheet {doc_no} ({status}) dengan {len(req.items)} item. SJ: {delivery_note}, PO: {po_num}")
 
-    # Webhook Trigger: tally.submitted
+    # Webhook & Notification Trigger: tally.submitted
     if status == "waiting_admin":
         WebhookService.dispatch("tally.submitted", sb_sheet, user, notes=initial_reason, extra={"previous_status": "draft"})
+        NotificationService.dispatch("tally.submitted", sb_sheet, user, notes=initial_reason, extra={"previous_status": "draft"})
 
     return {"id": sheet_id, "doc_no": doc_no, "status": status}
 
@@ -2521,9 +2841,10 @@ def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends
 
     log_activity(user["id"], user["name"], f"update_{new_status}", "tally_sheet", actual_id, f"Tally sheet {sheet['doc_no']} ({new_status}) diperbarui")
 
-    # Webhook Trigger: tally.submitted jika diserahkan ke admin
+    # Webhook & Notification Trigger: tally.submitted jika diserahkan ke admin
     if new_status == "waiting_admin" and sheet["status"] != "waiting_admin":
         WebhookService.dispatch("tally.submitted", sb_sheet, user, notes=hist_reason, extra={"previous_status": sheet["status"]})
+        NotificationService.dispatch("tally.submitted", sb_sheet, user, notes=hist_reason, extra={"previous_status": sheet["status"]})
 
     return {"id": actual_id, "doc_no": sheet["doc_no"], "status": new_status}
 
@@ -2585,9 +2906,11 @@ def transition_tally_sheet(sheet_id: str, req: WorkflowTransitionInput, user: di
     if res["old_status"] in ["admin_hold", "qc_hold"] and res["new_status"] not in ["admin_hold", "qc_hold"]:
         unhold_note = req.dict().get("resolution_notes") or req.dict().get("reason") or res["log_detail"]
         WebhookService.dispatch("tally.unheld", sheet_summary, user, notes=unhold_note, extra={"previous_status": res["old_status"]})
+        NotificationService.dispatch("tally.unheld", sheet_summary, user, notes=unhold_note, extra={"previous_status": res["old_status"]})
 
     if primary_event:
         WebhookService.dispatch(primary_event, sheet_summary, user, notes=res["pending_reason"] or res["log_detail"], extra={"previous_status": res["old_status"]})
+        NotificationService.dispatch(primary_event, sheet_summary, user, notes=res["pending_reason"] or res["log_detail"], extra={"previous_status": res["old_status"]})
 
     return {
         "message": f"Dokumen berhasil diperbarui ke status '{res['new_status']}'",

@@ -266,7 +266,39 @@ CREATE TABLE IF NOT EXISTS public.master_previews (
 );
 CREATE INDEX IF NOT EXISTS idx_master_previews_created ON public.master_previews(created_at DESC);
 
--- 10. ROW LEVEL SECURITY (RLS) POLICIES
+-- 10. NOTIFICATIONS TABLE (In-App Notification Center)
+CREATE TABLE IF NOT EXISTS public.notifications (
+    id TEXT PRIMARY KEY,
+    target_role TEXT DEFAULT '',
+    target_user_id TEXT DEFAULT '',
+    doc_id TEXT DEFAULT '',
+    doc_no TEXT DEFAULT '',
+    category TEXT NOT NULL DEFAULT 'info',
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    action_url TEXT DEFAULT '',
+    is_read INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_target_role ON public.notifications(target_role);
+CREATE INDEX IF NOT EXISTS idx_notifications_target_user ON public.notifications(target_user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_lookup ON public.notifications(target_role, target_user_id, is_read, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_doc_id ON public.notifications(doc_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON public.notifications(created_at DESC);
+
+-- Migration support for existing notifications table (Non-Destructive)
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS target_role TEXT DEFAULT '';
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS target_user_id TEXT DEFAULT '';
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS doc_id TEXT DEFAULT '';
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS doc_no TEXT DEFAULT '';
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'info';
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS title TEXT DEFAULT '';
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS message TEXT DEFAULT '';
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS action_url TEXT DEFAULT '';
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS is_read INTEGER DEFAULT 0;
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT timezone('utc', now());
+
+-- 11. ROW LEVEL SECURITY (RLS) POLICIES
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.master_versions ENABLE ROW LEVEL SECURITY;
@@ -277,6 +309,7 @@ ALTER TABLE public.tally_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.suppliers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.master_previews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Full access users" ON public.users;
 CREATE POLICY "Full access users" ON public.users FOR ALL USING (true) WITH CHECK (true);
@@ -307,6 +340,19 @@ CREATE POLICY "Full access activity_logs" ON public.activity_logs FOR ALL USING 
 
 DROP POLICY IF EXISTS "Full access master_previews" ON public.master_previews;
 CREATE POLICY "Full access master_previews" ON public.master_previews FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Full access notifications" ON public.notifications;
+CREATE POLICY "Full access notifications" ON public.notifications FOR ALL USING (true) WITH CHECK (true);
+
+-- Enable Supabase Realtime for notifications table (Non-Destructive)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+    END IF;
+EXCEPTION WHEN OTHERS THEN
+    NULL;
+END $$;
 
 -- 11. SEED DATA (Aman: Hanya diisi jika database kosong, ON CONFLICT DO NOTHING)
 INSERT INTO public.users (id, email, name, password_hash, role, is_pic, active, created_at)

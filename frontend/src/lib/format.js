@@ -15,6 +15,22 @@ export function fmtDateTime(iso) {
   return `${p.day}-${p.month}-${p.year} ${p.hour}:${p.minute}`;
 }
 
+export function fmtTimeAgo(iso) {
+  if (!iso) return "-";
+  const now = new Date();
+  const d = new Date(iso);
+  const diffSec = Math.floor((now - d) / 1000);
+  if (diffSec < 60) return "Baru saja";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} mnt lalu`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour} jam lalu`;
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffDay === 1) return "Kemarin";
+  if (diffDay < 7) return `${diffDay} hari lalu`;
+  return fmtDateTime(iso);
+}
+
 export function fmtDate(ymd) {
   if (!ymd) return "-";
   const [y, m, d] = ymd.split("-");
