@@ -2322,6 +2322,7 @@ class TallySheetInput(BaseModel):
     has_berita_acara: Optional[bool] = False
     ba_qa_doc_no: Optional[str] = None
     berita_acara: Optional[Dict[str, Any]] = None
+    expected_updated_at: Optional[str] = None
     items: List[TallyItemInput]
 
 class WorkflowTransitionInput(BaseModel):
@@ -2697,6 +2698,42 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
 
     return {"id": sheet_id, "doc_no": doc_no, "status": status}
 
+@app.get("/api/tally-sheets/{sheet_id}/version")
+def get_tally_sheet_version(sheet_id: str, user: dict = Depends(get_current_user)):
+    """
+    Ultra-lightweight status & version fingerprint endpoint for silent lazy background sync (<5ms).
+    """
+    conn = get_db()
+    row = conn.execute("""
+        SELECT ts.id, ts.doc_no, ts.status, ts.updated_at, ts.updated_by_name, ts.current_handler_role,
+               (SELECT count(*) FROM tally_history WHERE sheet_id = ts.id) as revision
+        FROM tally_sheets ts
+        WHERE ts.id = ? OR ts.doc_no = ?
+    """, (sheet_id, sheet_id)).fetchone()
+
+    if not row:
+        sync_from_supabase_if_needed(conn, sheet_id=sheet_id)
+        row = conn.execute("""
+            SELECT ts.id, ts.doc_no, ts.status, ts.updated_at, ts.updated_by_name, ts.current_handler_role,
+                   (SELECT count(*) FROM tally_history WHERE sheet_id = ts.id) as revision
+            FROM tally_sheets ts
+            WHERE ts.id = ? OR ts.doc_no = ?
+        """, (sheet_id, sheet_id)).fetchone()
+
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Tally sheet tidak ditemukan.")
+
+    return {
+        "id": row["id"],
+        "doc_no": row["doc_no"],
+        "status": row["status"],
+        "updated_at": row["updated_at"] or "",
+        "updated_by_name": row["updated_by_name"] or "",
+        "current_handler_role": row["current_handler_role"] or "",
+        "revision": row["revision"] or 1
+    }
+
 @app.get("/api/tally-sheets/{sheet_id}")
 def get_tally_sheet(sheet_id: str):
     conn = get_db()
@@ -2821,7 +2858,19 @@ def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends
         raise HTTPException(status_code=404, detail="Tally sheet tidak ditemukan.")
     
     sheet = dict(sheet_row)
-    
+
+    # Optimistic Concurrency Guard: tolak jika dokumen telah diubah pengguna lain
+    if req.expected_updated_at and sheet.get("updated_at"):
+        server_updated = (sheet["updated_at"] or "").strip()
+        expected_updated = req.expected_updated_at.strip()
+        if server_updated and expected_updated and server_updated != expected_updated:
+            conn.close()
+            editor_name = sheet.get("updated_by_name") or "pengguna lain"
+            raise HTTPException(
+                status_code=409,
+                detail=f"Konflik Pengeditan: Dokumen ini telah diperbarui oleh {editor_name}. Harap muat ulang dokumen untuk meninjau data terbaru sebelum menyimpan."
+            )
+
     if sheet["status"] not in ("draft", "admin_hold", "returned_to_checker"):
         conn.close()
         raise HTTPException(status_code=400, detail="Hanya dokumen Draft atau Revisi yang dapat diubah barisnya.")

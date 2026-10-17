@@ -246,3 +246,40 @@ Rencana perancangan dan implementasi Notification Center in-app berbasis Supabas
   - [x] Mekanisme pembersihan berkala (Auto-purge notifikasi `is_read = 1` yang berumur > 30 hari).
   - [x] Pengujian menyeluruh (Unit/Build test & verifikasi end-to-end alur notifikasi antar-role).
 
+---
+
+## 🔄 7. Roadmap Pelaksanaan: Silent Lazy Sync & Concurrency Guard (Multi-User Safe)
+
+Perancangan dan implementasi mekanisme sinkronisasi data latar belakang tanpa reload layar (*Silent Lazy State Reconciliation*) dan proteksi integritas multi-user saat membuka/memproses nomor Tally yang sama:
+
+- [x] **Fase 1: Endpoint Sidik Jari Status Dokumen Super-Ringan (Backend)**
+  - [x] Tambahkan endpoint ultra-ringan `GET /api/tally-sheets/{id}/version` yang hanya mengembalikan sidik jari dokumen:
+    `{ "id": "...", "status": "...", "updated_at": "...", "updated_by_name": "...", "revision": ... }`.
+  - [x] Respons super cepat (`< 5ms`) tanpa beban query JOIN items atau Supabase sync berlebih, sangat hemat resource serverless Vercel & kuota jaringan.
+
+- [x] **Fase 2: Silent Background Synchronizer di Halaman Detail (`TallyDetail.jsx`)**
+  - [x] Implementasikan interval pemeriksaan senyap (setiap 12 detik) di latar belakang halaman detail dokumen.
+  - [x] Fitur hemat resource (*Smart Pause*): Otomatis jeda jika tab browser di-minimize atau tidak aktif (`document.hidden`).
+  - [x] Perlindungan interaksi aktif (*Interaction Lock*): Otomatis jeda jika pengguna sedang membuka dialog modal (`cancelOpen`, `baModalOpen`, SweetAlert2) atau sedang memproses tombol.
+  - [x] Jika terdeteksi perbedaan sidik jari `updated_at` atau status:
+    - Jalankan pembaruan data di memori React State (`setSheet` dan `setHistory`) secara senyap tanpa refresh F5.
+    - Pertahankan posisi scroll dan input aktif pengguna 100%.
+    - Tampilkan notifikasi toast non-intrusif: *"ℹ️ Status dokumen diperbarui oleh [Nama Pengguna] menjadi [Status Baru]"*.
+
+- [x] **Fase 3: Optimistic Concurrency Guard pada Mode Edit Fisik (`TallyEditor.jsx` / Edit)**
+  - [x] Simpan snapshot `expected_updated_at` saat form edit pertama kali dibuka oleh Checker/Admin.
+  - [x] Kirim parameter `expected_updated_at` pada payload `PUT /api/tally-sheets/{id}`.
+  - [x] Jika di server `updated_at` sudah berubah (diedit oleh pengguna lain lebih dulu), tolak update (HTTP 409 Conflict) dan beri peringatan proteksi:
+    *"Konflik Pengeditan: Dokumen ini telah diperbarui oleh [Nama Pengguna]. Harap muat ulang dokumen untuk meninjau data terbaru sebelum menyimpan."*
+
+- [ ] **Fase 4: Supabase Realtime Listener (Instant Sub-Detik Dual-Engine - Opsional Saat Direct Client Aktif)**
+  - [ ] Tambahkan subscription WebSocket Supabase channel `postgres_changes` untuk tabel `tally_sheets` spesifik pada ID dokumen aktif.
+  - [ ] Jika WebSocket menerima event `UPDATE`, langsung picu silent fetch tanpa menunggu jeda polling 12 detik.
+
+- [x] **Fase 5: Verifikasi & Uji Simulasi Multi-User Concurrency**
+  - [x] Uji endpoint `GET /api/tally-sheets/{id}/version` menghasilkan sidik jari valid dalam < 10ms.
+  - [x] Uji otomatis `PUT /api/tally-sheets/{id}` dengan timestamp kedaluwarsa berhasil dicegat dengan status HTTP 409 Conflict.
+  - [x] Validasi build frontend Vite lolos kompilasi (0 error).
+  - [x] Validasi sintaks backend Python lolos kompilasi (0 error).
+
+

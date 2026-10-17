@@ -329,6 +329,7 @@ export default function TallyEditor() {
       has_berita_acara: hasBeritaAcara,
       ba_qa_doc_no: hasBeritaAcara ? (sheet?.ba_qa_doc_no || settings?.qa_documents?.BERITA_ACARA_IMPORT?.code || undefined) : undefined,
       berita_acara: hasBeritaAcara ? beritaAcara : null,
+      expected_updated_at: id ? (sheet?.updated_at || undefined) : undefined,
       items: filled.map((r) => ({
         material_code: r.material_code,
         material_name: r.material_name,
@@ -358,6 +359,10 @@ export default function TallyEditor() {
       );
       navigate(`/tally/${r.data.id}`);
     } catch (e) {
+      if (e.response?.status === 409) {
+        toast.error(errMsg(e), { duration: 7000 });
+        return;
+      }
       const d = e.response?.data?.detail;
       if (d && typeof d === "object" && Array.isArray(d.errors)) {
         const map = {};

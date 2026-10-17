@@ -155,6 +155,62 @@ export default function TallyDetail() {
     load();
   }, [load]);
 
+  // Silent Lazy Background Sync: Memantau perubahan status dokumen tanpa reload layar (Flicker-Free)
+  useEffect(() => {
+    if (!id || !sheet) return;
+
+    const checkVersion = async () => {
+      // 1. Lewati jika tab browser sedang di-minimize/background
+      if (document.hidden) return;
+      // 2. Lewati jika user sedang melakukan aksi atau modal dialog terbuka
+      if (busy || cancelOpen || baModalOpen) return;
+      // 3. Lewati jika pop-up konfirmasi/alasan SweetAlert2 sedang aktif
+      if (document.querySelector(".swal2-container")) return;
+
+      try {
+        const res = await api.get(`/tally-sheets/${id}/version`);
+        const ver = res.data;
+        if (!ver) return;
+
+        // Bandingkan updated_at atau status server dengan state lokal saat ini
+        const isServerNewer = ver.updated_at && sheet.updated_at && ver.updated_at !== sheet.updated_at;
+        const isStatusChanged = ver.status && ver.status !== sheet.status;
+
+        if (isServerNewer || isStatusChanged) {
+          // Lakukan pembaruan senyap (Silent State Reconciliation)
+          const [sheetRes, histRes] = await Promise.all([
+            api.get(`/tally-sheets/${id}`),
+            api.get(`/tally-sheets/${id}/history`)
+          ]);
+          setSheet(sheetRes.data);
+          setHistory(histRes.data);
+
+          const editor = ver.updated_by_name || "Pengguna lain";
+          const statusLabels = {
+            draft: "Draf Fisik",
+            waiting_admin: "Menunggu Admin WH",
+            waiting_qc: "Pemeriksaan QC",
+            admin_hold: "Hold Admin",
+            qc_hold: "Hold QC",
+            completed: "Lulus Mutu (Stock Ter-UU)",
+            cancelled: "Dibatalkan",
+            returned_to_checker: "Revisi Checker"
+          };
+          const targetStatus = statusLabels[ver.status] || ver.status;
+          toast.info(
+            `Dokumen diperbarui oleh ${editor} (Status: ${targetStatus})`,
+            { id: `doc-sync-${id}`, duration: 4500 }
+          );
+        }
+      } catch {
+        // Defensive ignore: hindari gangguan jika terjadi network blip sesaat
+      }
+    };
+
+    const timer = setInterval(checkVersion, 12000);
+    return () => clearInterval(timer);
+  }, [id, sheet, busy, cancelOpen, baModalOpen]);
+
   if (!sheet) {
     return <DetailSkeleton />;
   }
