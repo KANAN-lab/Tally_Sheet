@@ -14,14 +14,14 @@ import { swalAlert } from "@/lib/swal";
 
 const FIELDS = [
   ["batch_fisik", "Batch Fisik"],
-  ["supplier_batch", "Supplier Batch"],
+  ["supplier_batch", "Produsen"],
   ["expired_date", "Expired Date"],
   ["production_date", "Production Date"],
   ["pic", "PIC (Otomatis Terkunci)"],
 ];
 
 const RULES = [
-  ["within_document", "Dalam satu dokumen", "Kombinasi Kode + Batch Fisik + Supplier Batch tidak boleh sama dalam satu tally sheet."],
+  ["within_document", "Dalam satu dokumen", "Kombinasi Kode + Batch Fisik + Produsen tidak boleh sama dalam satu tally sheet."],
   ["across_final", "Antar dokumen Selesai/Final", "Kombinasi yang sama tidak boleh ada di dokumen yang sudah selesai."],
   ["both", "Keduanya", "Terapkan kedua aturan pencegahan duplikasi di atas."],
   ["none", "Tidak dicek", "Izinkan data ganda tanpa pembatasan."],
@@ -265,7 +265,7 @@ export default function Settings() {
               <Layers className="h-5 w-5 text-indigo-700" /> Aturan Pencegahan Data Ganda
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Pencegahan input material ganda dengan kombinasi Kode + Batch Fisik + Supplier Batch.
+              Pencegahan input material ganda dengan kombinasi Kode + Batch Fisik + Produsen.
             </p>
           </div>
 

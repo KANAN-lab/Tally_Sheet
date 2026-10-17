@@ -4,7 +4,7 @@ import { Printer, FileText } from "lucide-react";
 import { api, errMsg } from "@/lib/api";
 import { fmtDate, fmtDateTime } from "@/lib/format";
 
-const HEAD = ["No. Urut", "Kode Material", "Nama Material", "UOM", "Supplier", "Qty", "Batch Fisik", "Supplier Batch", "Expired Date", "Production Date", "PIC"];
+const HEAD = ["No. Urut", "Kode Material", "Nama Material", "UOM", "Supplier", "Qty", "Batch Fisik", "Produsen", "Expired Date", "Production Date", "PIC"];
 const SIGN = ["PIC / Pembuat", "Pemeriksa", "Approver"];
 
 export default function TallyPrint() {

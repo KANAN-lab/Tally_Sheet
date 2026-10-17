@@ -148,7 +148,7 @@ export default function TallyRow({
           </div>
         </Cell>
 
-        {/* 7. Batch Fisik - Paired side-by-side with Supplier Batch on mobile */}
+        {/* 7. Batch Fisik - Paired side-by-side with Produsen on mobile */}
         <Cell label={`Batch Fisik${req("batch_fisik")}`} className="col-span-1">
           <input
             className={inputCls(e("batch_fisik"))}
@@ -160,8 +160,8 @@ export default function TallyRow({
           <FieldError msg={e("batch_fisik")} testId={tid("batch_fisik-error")} />
         </Cell>
 
-        {/* 8. Supplier Batch - Paired side-by-side with Batch Fisik on mobile */}
-        <Cell label={`Supplier Batch${req("supplier_batch")}`} className="col-span-1">
+        {/* 8. Produsen - Paired side-by-side with Batch Fisik on mobile */}
+        <Cell label={`Produsen${req("supplier_batch")}`} className="col-span-1">
           <input
             className={inputCls(e("supplier_batch"))}
             value={row.supplier_batch}

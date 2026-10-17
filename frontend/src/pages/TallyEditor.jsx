@@ -30,7 +30,7 @@ import { swalConfirm } from "@/lib/swal";
 
 const LABELS = {
   batch_fisik: "Batch Fisik",
-  supplier_batch: "Supplier Batch",
+  supplier_batch: "Produsen",
   expired_date: "Expired Date",
   production_date: "Production Date",
   pic: "PIC"
@@ -93,7 +93,7 @@ function clientValidate(rows, action, settings) {
         .map((x) => x.trim().toUpperCase())
         .join("|");
       if (k in seen) {
-        errs[`${i}-batch_fisik`] = `Data ganda dengan baris ${seen[k] + 1} (Kode + Batch Fisik + Supplier Batch)`;
+        errs[`${i}-batch_fisik`] = `Data ganda dengan baris ${seen[k] + 1} (Kode + Batch Fisik + Produsen)`;
       } else {
         seen[k] = i;
       }
@@ -850,7 +850,7 @@ export default function TallyEditor() {
                   <div>Qty Fisik *</div>
                   <div>UOM</div>
                   <div>Batch Fisik *</div>
-                  <div>Supplier Batch *</div>
+                  <div>Produsen *</div>
                   <div>Expired Date *</div>
                   <div>Production Date *</div>
                   <div>PIC *</div>
@@ -973,7 +973,7 @@ export default function TallyEditor() {
                     <th className="py-2 px-3">Qty</th>
                     <th className="py-2 px-3">UOM</th>
                     <th className="py-2 px-3">Batch Fisik</th>
-                    <th className="py-2 px-3">Supplier Batch</th>
+                    <th className="py-2 px-3">Produsen</th>
                     <th className="py-2 px-3">Expired Date</th>
                     <th className="py-2 px-3">Production Date</th>
                   </tr>

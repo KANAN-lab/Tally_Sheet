@@ -1929,7 +1929,7 @@ def validate_items(conn, items: List[TallyItemInput], action: str, sheet_id: Opt
                 "pic": (it.pic_id or "").strip()
             }
             labels = {
-                "batch_fisik": "Batch Fisik", "supplier_batch": "Supplier Batch",
+                "batch_fisik": "Batch Fisik", "supplier_batch": "Produsen",
                 "expired_date": "Expired Date", "production_date": "Production Date", "pic": "PIC"
             }
             for f, val in checks.items():
@@ -1940,7 +1940,7 @@ def validate_items(conn, items: List[TallyItemInput], action: str, sheet_id: Opt
         k = f"{it.material_code.strip().upper()}|{(it.batch_fisik or '').strip().upper()}|{(it.supplier_batch or '').strip().upper()}"
         if duplicate_rule in ("within_document", "both"):
             if k in seen_within:
-                errors.append({"row": i, "field": "batch_fisik", "message": f"Data ganda dengan baris {seen_within[k] + 1} (Kode + Batch Fisik + Supplier Batch)"})
+                errors.append({"row": i, "field": "batch_fisik", "message": f"Data ganda dengan baris {seen_within[k] + 1} (Kode + Batch Fisik + Produsen)"})
             else:
                 seen_within[k] = i
 
@@ -2894,7 +2894,7 @@ def export_tally_sheet(sheet_id: str):
     ws["F4"] = sheet["created_by_name"]
     ws["F4"].font = meta_font
 
-    headers = ["No. Urut", "Kode Material", "Nama Material", "UOM", "Supplier", "Qty", "Batch Fisik", "Supplier Batch", "Expired Date", "Production Date", "PIC"]
+    headers = ["No. Urut", "Kode Material", "Nama Material", "UOM", "Supplier", "Qty", "Batch Fisik", "Produsen", "Expired Date", "Production Date", "PIC"]
     row_idx = 6
 
     for col_idx, h in enumerate(headers, start=1):

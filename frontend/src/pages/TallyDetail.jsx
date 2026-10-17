@@ -694,7 +694,7 @@ export default function TallyDetail() {
                 <strong className="font-mono text-slate-900">{it.batch_fisik || "-"}</strong>
               </div>
               <div>
-                <span className="text-slate-400 block text-[10px]">Supplier Batch:</span>
+                <span className="text-slate-400 block text-[10px]">Produsen:</span>
                 <strong className="font-mono text-slate-900">{it.supplier_batch || "-"}</strong>
               </div>
               <div>
@@ -719,7 +719,7 @@ export default function TallyDetail() {
         <table className="w-full min-w-[1000px] text-sm">
           <thead className="bg-[#0B2149] text-left text-xs font-semibold uppercase tracking-wider text-white">
             <tr>
-              {["No.", "Kode Material", "Nama Material", "UOM", "Supplier (MKVZ)", "Qty Fisik", "Batch Fisik", "Supplier Batch", "Expired Date", "Production Date", "PIC"].map((h) => (
+              {["No.", "Kode Material", "Nama Material", "UOM", "Supplier (MKVZ)", "Qty Fisik", "Batch Fisik", "Produsen", "Expired Date", "Production Date", "PIC"].map((h) => (
                 <th key={h} className="px-3 py-3 whitespace-nowrap">{h}</th>
               ))}
             </tr>
