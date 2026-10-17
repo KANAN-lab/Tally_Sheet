@@ -140,7 +140,7 @@ export default function TallyDetail() {
 
     api.get(`/tally-sheets/${id}/history`)
       .then((r) => setHistory(r.data))
-      .catch(() => {});
+      .catch(() => { });
 
     api.get("/settings")
       .then((r) => {
@@ -148,7 +148,7 @@ export default function TallyDetail() {
           setHoldCategories(r.data.hold_categories);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, [id, navigate]);
 
   useEffect(() => {
@@ -371,7 +371,7 @@ export default function TallyDetail() {
                 data-testid="tally-detail-attach-ba-top-button"
                 title="Lampirkan Berita Acara Penerimaan Barang (Import / Lokal)"
               >
-                <Plus className="mr-1.5 h-4 w-4" /> + LAMPIRKAN BERITA ACARA
+                <Plus className="mr-1.5 h-4 w-4" /> LAMPIRKAN BERITA ACARA
               </Button>
             ) : (
               <Button
@@ -638,7 +638,7 @@ export default function TallyDetail() {
                 className="bg-blue-700 hover:bg-blue-800 text-white font-semibold text-xs shrink-0 shadow-xs"
                 data-testid="detail-attach-ba-banner-button"
               >
-                <Plus className="mr-1 h-3.5 w-3.5" /> + Lampirkan Berita Acara
+                <Plus className="mr-1 h-3.5 w-3.5" /> Lampirkan Berita Acara
               </Button>
             )}
           </div>

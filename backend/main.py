@@ -133,6 +133,28 @@ def sync_from_supabase_if_needed(conn, sheet_id: str = None):
             for s in sheets:
                 raw_status = s.get("status") or "draft"
                 clean_status = "waiting_admin" if raw_status == "waiting_admin_1" else raw_status
+                items = s.get("tally_items") or []
+                raw_sup_name = (s.get("supplier_name") or "").strip()
+                raw_sup_code = (s.get("supplier_code") or "").strip()
+                if not raw_sup_name and items:
+                    val_sups = [it.get("supplier_name", "").strip() for it in items if (it.get("supplier_name") or "").strip()]
+                    if val_sups:
+                        raw_sup_name = ", ".join(dict.fromkeys(val_sups))
+                if not raw_sup_code and items:
+                    val_codes = [it.get("supplier_code", "").strip() for it in items if (it.get("supplier_code") or "").strip()]
+                    if val_codes:
+                        raw_sup_code = ", ".join(dict.fromkeys(val_codes))
+
+                if not (s.get("supplier_name") or "").strip() and raw_sup_name:
+                    try:
+                        requests.patch(
+                            f"{SUPABASE_URL}/rest/v1/tally_sheets?id=eq.{s['id']}",
+                            headers=get_sb_headers(),
+                            json={"supplier_name": raw_sup_name, "supplier_code": raw_sup_code},
+                            timeout=2
+                        )
+                    except Exception:
+                        pass
 
                 exists = conn.execute("SELECT id FROM tally_sheets WHERE id = ?", (s["id"],)).fetchone()
                 if not exists:
@@ -150,7 +172,7 @@ def sync_from_supabase_if_needed(conn, sheet_id: str = None):
                         s.get("finalized_at"), s.get("finalized_by"), s.get("finalized_by_name"),
                         s.get("cancelled_at"), s.get("cancelled_by"), s.get("cancelled_by_name"),
                         s.get("cancel_reason"),
-                        s.get("delivery_note_no", ""), s.get("po_no", ""), s.get("supplier_code", ""), s.get("supplier_name", ""),
+                        s.get("delivery_note_no", ""), s.get("po_no", ""), raw_sup_code, raw_sup_name,
                         s.get("arrival_date", ""), s.get("driver_name", ""), s.get("truck_plate", ""),
                         s.get("current_handler_role", "admin"), s.get("current_handler_name", ""),
                         s.get("pending_reason", ""), s.get("pending_category", ""),
@@ -178,7 +200,7 @@ def sync_from_supabase_if_needed(conn, sheet_id: str = None):
                         s.get("finalized_at"), s.get("finalized_by"), s.get("finalized_by_name"),
                         s.get("cancelled_at"), s.get("cancelled_by"), s.get("cancelled_by_name"),
                         s.get("cancel_reason"),
-                        s.get("delivery_note_no", ""), s.get("po_no", ""), s.get("supplier_code", ""), s.get("supplier_name", ""),
+                        s.get("delivery_note_no", ""), s.get("po_no", ""), raw_sup_code, raw_sup_name,
                         s.get("arrival_date", ""), s.get("driver_name", ""), s.get("truck_plate", ""),
                         s.get("current_handler_role", "admin"), s.get("current_handler_name", ""),
                         s.get("pending_reason", ""), s.get("pending_category", ""),
@@ -597,6 +619,29 @@ def init_db():
                 ))
         except Exception as e:
             print("Error loading seed materials:", e)
+
+    # Self-heal missing supplier_name / supplier_code in tally_sheets from tally_items
+    try:
+        c.execute("""
+            UPDATE tally_sheets
+            SET supplier_name = (
+                SELECT group_concat(DISTINCT ti.supplier_name)
+                FROM tally_items ti
+                WHERE ti.sheet_id = tally_sheets.id AND ti.supplier_name != '' AND ti.supplier_name IS NOT NULL
+            ),
+            supplier_code = (
+                SELECT group_concat(DISTINCT ti.supplier_code)
+                FROM tally_items ti
+                WHERE ti.sheet_id = tally_sheets.id AND ti.supplier_code != '' AND ti.supplier_code IS NOT NULL
+            )
+            WHERE (supplier_name IS NULL OR supplier_name = '' OR supplier_name = '-')
+            AND EXISTS (
+                SELECT 1 FROM tally_items ti
+                WHERE ti.sheet_id = tally_sheets.id AND ti.supplier_name != '' AND ti.supplier_name IS NOT NULL
+            );
+        """)
+    except Exception as e:
+        print("Notice: self-heal supplier_name in init_db:", e)
 
     conn.commit()
     conn.close()
@@ -1956,7 +2001,10 @@ def get_tally_sheets(
     total = conn.execute(f"SELECT count(*) FROM tally_sheets ts WHERE {where_str}", params).fetchone()[0]
 
     rows = conn.execute(f"""
-        SELECT ts.*, count(ti.id) as item_count, group_concat(DISTINCT ti.pic_name) as pic_names
+        SELECT ts.*, 
+               coalesce(nullif(ts.supplier_name, ''), group_concat(DISTINCT nullif(ti.supplier_name, ''))) as effective_supplier_name,
+               coalesce(nullif(ts.supplier_code, ''), group_concat(DISTINCT nullif(ti.supplier_code, ''))) as effective_supplier_code,
+               count(ti.id) as item_count, group_concat(DISTINCT ti.pic_name) as pic_names
         FROM tally_sheets ts
         LEFT JOIN tally_items ti ON ts.id = ti.sheet_id
         WHERE {where_str}
@@ -1970,14 +2018,16 @@ def get_tally_sheets(
     items = []
     for r in rows:
         pic_list = [p for p in (r["pic_names"] or "").split(",") if p]
+        effective_sup = (r["effective_supplier_name"] or (r["supplier_name"] if "supplier_name" in r.keys() else "") or "").strip()
+        effective_code = (r["effective_supplier_code"] or (r["supplier_code"] if "supplier_code" in r.keys() else "") or "").strip()
         items.append({
             "id": r["id"],
             "doc_no": r["doc_no"],
             "status": r["status"],
             "delivery_note_no": r["delivery_note_no"] if "delivery_note_no" in r.keys() else "",
             "po_no": r["po_no"] if "po_no" in r.keys() else "",
-            "supplier_code": r["supplier_code"] if "supplier_code" in r.keys() else "",
-            "supplier_name": r["supplier_name"] if "supplier_name" in r.keys() else "",
+            "supplier_code": effective_code,
+            "supplier_name": effective_sup,
             "arrival_date": r["arrival_date"] if "arrival_date" in r.keys() else "",
             "driver_name": r["driver_name"] if "driver_name" in r.keys() else "",
             "truck_plate": r["truck_plate"] if "truck_plate" in r.keys() else "",
@@ -2030,6 +2080,17 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
     po_num = (req.po_no or "").strip()
     sup_code = (req.supplier_code or "").strip()
     sup_name = (req.supplier_name or "").strip()
+
+    # Automatically derive supplier_name and supplier_code from items if missing
+    if not sup_name and req.items:
+        val_sups = [it.supplier_name.strip() for it in req.items if (it.supplier_name or "").strip()]
+        if val_sups:
+            sup_name = ", ".join(dict.fromkeys(val_sups))
+    if not sup_code and req.items:
+        val_codes = [it.supplier_code.strip() for it in req.items if (it.supplier_code or "").strip()]
+        if val_codes:
+            sup_code = ", ".join(dict.fromkeys(val_codes))
+
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     arr_date = (req.arrival_date or "").strip() or now[:10]
     drv_name = (req.driver_name or "").strip()
@@ -2205,14 +2266,25 @@ def get_tally_sheet(sheet_id: str):
             "pic_name": it["pic_name"]
         })
 
+    sheet_sup_name = (sheet["supplier_name"] if "supplier_name" in sheet.keys() else "") or ""
+    sheet_sup_code = (sheet["supplier_code"] if "supplier_code" in sheet.keys() else "") or ""
+    if not sheet_sup_name and item_list:
+        val_sups = [it["supplier_name"].strip() for it in item_list if (it.get("supplier_name") or "").strip()]
+        if val_sups:
+            sheet_sup_name = ", ".join(dict.fromkeys(val_sups))
+    if not sheet_sup_code and item_list:
+        val_codes = [it["supplier_code"].strip() for it in item_list if (it.get("supplier_code") or "").strip()]
+        if val_codes:
+            sheet_sup_code = ", ".join(dict.fromkeys(val_codes))
+
     return {
         "id": sheet["id"],
         "doc_no": sheet["doc_no"],
         "status": sheet["status"],
         "delivery_note_no": sheet["delivery_note_no"] if "delivery_note_no" in sheet.keys() else "",
         "po_no": sheet["po_no"] if "po_no" in sheet.keys() else "",
-        "supplier_code": sheet["supplier_code"] if "supplier_code" in sheet.keys() else "",
-        "supplier_name": sheet["supplier_name"] if "supplier_name" in sheet.keys() else "",
+        "supplier_code": sheet_sup_code,
+        "supplier_name": sheet_sup_name,
         "arrival_date": sheet["arrival_date"] if "arrival_date" in sheet.keys() else "",
         "driver_name": sheet["driver_name"] if "driver_name" in sheet.keys() else "",
         "truck_plate": sheet["truck_plate"] if "truck_plate" in sheet.keys() else "",
@@ -2291,6 +2363,15 @@ def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends
     po_num = (req.po_no or sheet.get("po_no") or "").strip()
     sup_code = (req.supplier_code or sheet.get("supplier_code") or "").strip()
     sup_name = (req.supplier_name or sheet.get("supplier_name") or "").strip()
+
+    # Always ensure supplier_name and supplier_code reflect items if revised or missing
+    if req.items:
+        val_sups = [it.supplier_name.strip() for it in req.items if (it.supplier_name or "").strip()]
+        if val_sups:
+            sup_name = ", ".join(dict.fromkeys(val_sups))
+        val_codes = [it.supplier_code.strip() for it in req.items if (it.supplier_code or "").strip()]
+        if val_codes:
+            sup_code = ", ".join(dict.fromkeys(val_codes))
     arr_date = (req.arrival_date or sheet.get("arrival_date") or "").strip() or now[:10]
     drv_name = (req.driver_name or sheet.get("driver_name") or "").strip()
     trk_plate = (req.truck_plate or sheet.get("truck_plate") or "").strip()

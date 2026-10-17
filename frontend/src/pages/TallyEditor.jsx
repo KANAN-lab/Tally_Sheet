@@ -314,9 +314,14 @@ export default function TallyEditor() {
       return toast.error("Minimal 1 baris material harus diisi");
     }
 
+    const distinctSuppliers = [...new Set(filled.map((r) => (r.supplier_name || "").trim()).filter(Boolean))];
+    const distinctSupplierCodes = [...new Set(filled.map((r) => (r.supplier_code || "").trim()).filter(Boolean))];
+
     const payload = {
       delivery_note_no: header.delivery_note_no.trim(),
       po_no: header.po_no.trim(),
+      supplier_name: distinctSuppliers.join(", "),
+      supplier_code: distinctSupplierCodes.join(", "),
       arrival_date: header.arrival_date || new Date().toISOString().slice(0, 10),
       truck_plate: header.truck_plate.trim(),
       action,
