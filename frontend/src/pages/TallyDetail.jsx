@@ -182,15 +182,26 @@ export default function TallyDetail() {
 
     // 2. Admin Forward to QC
     else if (action === "send_to_qc") {
-      const ok = await swalConfirm({
-        title: "Teruskan Dokumen ke QC?",
-        text: "Material telah diverifikasi dan siap diserahkan ke Tim Quality Control untuk sampling & uji mutu.",
-        confirmButtonText: "Ya, Teruskan ke QC",
-        confirmButtonColor: "#7e22ce"
-      });
-      if (!ok) return;
+      let resolutionReason = "";
+      if (sheet.status === "admin_hold") {
+        const res = await swalPromptReason({
+          title: "Lepas Hold Admin & Teruskan ke QC",
+          categories: ["Verifikasi Dokumen Revisi Selesai", "Kuantiti Fisik Telah Disesuaikan", "Surat Jalan / PO Telah Diperbaiki", "Lain-lain"],
+          confirmButtonText: "Lepas Hold & Teruskan ke QC"
+        });
+        if (!res) return;
+        resolutionReason = res.reason;
+      } else {
+        const ok = await swalConfirm({
+          title: "Teruskan Dokumen ke QC?",
+          text: "Material telah diverifikasi dan siap diserahkan ke Tim Quality Control untuk sampling & uji mutu.",
+          confirmButtonText: "Ya, Teruskan ke QC",
+          confirmButtonColor: "#7e22ce"
+        });
+        if (!ok) return;
+      }
 
-      executeTransition(action, {});
+      executeTransition(action, { reason: resolutionReason });
     }
 
     // 3. Admin Hold
@@ -231,15 +242,26 @@ export default function TallyDetail() {
 
     // 6. QC Approve (Selesai - Stock Ter-UU)
     else if (action === "qc_approve") {
-      const ok = await swalConfirm({
-        title: "Luluskan Uji Mutu Material (Stock Ter-UU)?",
-        text: "Material dinyatakan Lolos Uji Mutu QC. Status dokumen akan langsung diselesaikan dan stok dinyatakan Ter-UU.",
-        confirmButtonText: "Ya, Luluskan & Selesaikan",
-        confirmButtonColor: "#059669"
-      });
-      if (!ok) return;
+      let qcResolution = "Lolos Uji Mutu Fisik QC (Stock Ter-UU)";
+      if (sheet.status === "qc_hold") {
+        const res = await swalPromptReason({
+          title: "Luluskan Mutu Setelah Penahanan QC",
+          categories: ["Hasil Lab Ulang Memenuhi Standar", "COA Lengkap & Sesuai", "Uji Organoleptik Lolos", "Dispensasi QA Disetujui", "Lain-lain"],
+          confirmButtonText: "Luluskan (Stock Ter-UU)"
+        });
+        if (!res) return;
+        qcResolution = res.reason;
+      } else {
+        const ok = await swalConfirm({
+          title: "Luluskan Uji Mutu Material (Stock Ter-UU)?",
+          text: "Material dinyatakan Lolos Uji Mutu QC. Status dokumen akan langsung diselesaikan dan stok dinyatakan Ter-UU.",
+          confirmButtonText: "Ya, Luluskan & Selesaikan",
+          confirmButtonColor: "#059669"
+        });
+        if (!ok) return;
+      }
 
-      executeTransition(action, { reason: "Lolos Uji Mutu Fisik QC (Stock Ter-UU)" });
+      executeTransition(action, { reason: qcResolution });
     }
 
     // 7. QC Reject

@@ -13,8 +13,10 @@ Dokumen ini melacak status pengerjaan fitur, perbaikan bug, arsitektur sistem, d
 | **Standar Dokumen QA & Berita Acara** | 4 | 0 | 4 |
 | **Integrasi, Cloud Parity & Sinkronisasi Data** | 6 | 0 | 6 |
 | **Manajemen Pengguna & Hak Akses** | 4 | 0 | 4 |
+| **Perbaikan UI/UX Laporan & Audit** | 6 | 0 | 6 |
+| **Keamanan & Keandalan Fungsional** | 5 | 0 | 5 |
 | **Tindakan User & Pengujian Live** | 0 | 2 | 2 |
-| **Pengembangan Lanjutan (Backlog / Opsional)** | 1 | 2 | 3 |
+| **Pengembangan Lanjutan (Backlog / Opsional)** | 1 | 1 | 2 |
 
 ---
 
@@ -113,12 +115,65 @@ Dokumen ini melacak status pengerjaan fitur, perbaikan bug, arsitektur sistem, d
 
 | No | Tindakan | Penanggung Jawab | Keterangan |
 | :---: | :--- | :---: | :--- |
-| **1** | **Jalankan SQL Migration di Supabase Cloud** | **User / Admin DB** | File [`supabase_schema.sql`](file:///d:/2.%20FILE%20MEETING/Dashboard/Tally%20Sheet/supabase_schema.sql) telah diperbarui dengan kolom `role_permissions_json` pada tabel `settings`, skema tabel `suppliers`, kolom QA registry, dan RLS policies baru. Buka **Supabase Dashboard → SQL Editor**, paste isi file [`supabase_schema.sql`](file:///d:/2.%20FILE%20MEETING/Dashboard/Tally%20Sheet/supabase_schema.sql), dan klik **Run**. |
+| **1** | **Jalankan SQL Migration di Supabase Cloud** | **User / Admin DB** | File [`supabase_schema.sql`](file:///d:/2.%20FILE%20MEETING/Dashboard/Tally%20Sheet/supabase_schema.sql) telah diperbarui dengan kolom `role_permissions_json` pada tabel `settings`, skema tabel `suppliers`, tabel staging `master_previews`, kolom QA registry, dan RLS policies baru. Buka **Supabase Dashboard → SQL Editor**, paste isi file [`supabase_schema.sql`](file:///d:/2.%20FILE%20MEETING/Dashboard/Tally%20Sheet/supabase_schema.sql), dan klik **Run**. |
 | **2** | **Uji Coba Pengguna & Matriks Hak Akses** | **Tim QA / User** | Login di [tally-incoming.vercel.app](https://tally-incoming.vercel.app/) sebagai `admin@tally.com`, buka menu **Pengguna & Hak Akses**, uji coba pembuatan akun baru dengan role spesifik, lalu buka tab **Matriks Otorisasi Hak Akses (RBAC)** untuk menguji toggle izin fitur dan verifikasi penerapannya saat login sebagai akun terkait. |
 
 ---
 
-## 🚀 3. Ide Pengembangan Mendatang (Backlog / Opsional)
+## 🛠️ 3. Paket Perbaikan UI/UX Halaman Laporan & Audit (`Reports.jsx`)
+
+Daftar perbaikan berdasarkan hasil evaluasi UI/UX terkini:
+
+- [x] **1. Active State & Visual Feedback Quick Preset**:
+  - Menambahkan penanda visual aktif (`active state`) pada tombol Quick Preset (*Hari Ini*, *7 Hari Terakhir*, *Bulan Ini*, *Semua Periode*) agar pengguna langsung mengetahui rentang waktu yang sedang ditampilkan.
+- [x] **2. Integrasi Filter Vendor & Tombol Clear Pencarian**:
+  - Menambahkan input seleksi/pencarian Vendor/Supplier (`filters.supplier`) ke dalam filter bar yang sudah didukung oleh backend API.
+  - Menambahkan tombol clear instan (`X`) di dalam kolom pencarian teks untuk memudahkan pengosongan input tanpa backspace manual.
+  - Indikator status form filter: Tombol *"Terapkan Filter"* memberikan feedback visual jelas saat ada parameter filter yang diubah namun belum di-apply.
+- [x] **3. KPI Cards Loading Skeleton & Harmonisasi Palet**:
+  - Menambahkan skeleton shimmer loading pada nilai 4 kartu KPI saat `loading = true` agar sinkron dengan status loading tabel.
+  - Menyelaraskan aksen warna kartu *Baris Material* dari indigo ke tema industrial Navy & Slate Blue (`#0B2149` / `blue-700`).
+- [x] **4. Responsivitas Layar Mobile untuk Tab 2, 3, dan 4**:
+  - Menambahkan mode Mobile Cards (`lg:hidden`) untuk:
+    - **Tab 2: Evaluasi Kinerja Vendor (ISO 8.4)** (Kartu metrik acceptance rate, total SJ, total volume, dan badge grade).
+    - **Tab 3: Log Ketidaksesuaian & Hold (ISO 8.7)** (Kartu deviasi kronologi, nomor Tally, Surat Jalan, kategori hold, dan PIC).
+    - **Tab 4: Monitoring Umur Simpan (FEFO / GMP)** (Kartu umur simpan, sisa hari, persentase sisa, dan badge status keamanan pangan).
+  - Memastikan seluruh laporan dapat dibaca optimal di perangkat tablet maupun smartphone gudang tanpa scroll horizontal.
+- [x] **5. Optimasi Cetak Dokumen Ringkasan (`@media print`)**:
+  - Menambahkan styling cetak `@media print` sehingga saat tombol *"Cetak Ringkasan"* ditekan, elemen non-dokumen (sidebar navigasi, topbar, filter bar, pagination, dan tombol aksi) disembunyikan secara bersih dan menghasilkan lembar audit siap cetak.
+- [x] **6. Interaktivitas Klik No. Tally & Modal Pratinjau Cepat (Opsi A & Opsi B)**:
+  - Membuka modal popup [`TallyQuickModal`](file:///d:/2.%20FILE%20MEETING/Dashboard/Tally%20Sheet/frontend/src/components/TallyQuickModal.jsx) saat No. Tally diklik di Tab 1 (Ketertelusuran), Tab 3 (Log Ketidaksesuaian), dan Tab 4 (Monitoring Umur Simpan).
+  - Menampilkan ringkasan armada, PO, Surat Jalan, peringatan Berita Acara, pipeline alur 3-tahap, tabel material fisik, dan riwayat status tanpa reload atau mereset filter laporan.
+  - Menyediakan tombol aksi fleksibel: *Buka Halaman Penuh* di tab baru (`/tally/:id`), *Cetak Tally Sheet*, *Cetak Berita Acara*, *Download Excel*, dan tombol salin nomor ke clipboard.
+  - Menambahkan badge visual mini `BA` pada nomor Tally yang memiliki Berita Acara deviasi lapangan.
+
+---
+
+## 🛡️ 4. Paket Peningkatan Keamanan & Keandalan Fungsional
+
+Daftar perbaikan berdasarkan evaluasi fungsional menyeluruh:
+
+- [x] **1. Penutupan Celah Bypass Alur (`action: "final"`)**:
+  - Menghapus logika legacy `action: "final"` dari handler pembuatan (`POST /api/tally-sheets`) dan pembaruan draf (`PUT /api/tally-sheets/{id}`).
+  - Memastikan status dokumen hanya bisa menjadi `completed` (Stock Ter-UU) melalui endpoint transisi resmi QC (`qc_approve`) yang memvalidasi hak akses peran `qc`.
+- [x] **2. Validasi Kuantitas Fisik Wajib Positif (`qty > 0`)**:
+  - Menambahkan pengecekan pada fungsi `validate_items` bahwa setiap baris kedatangan material memiliki `qty > 0` saat dokumen diserahkan ke Admin (`submit_to_admin`).
+  - Mencegah input kuantitas kosong, 0, atau bernilai negatif.
+- [x] **3. Peringatan & Pencegahan Duplikasi Nomor Surat Jalan (`delivery_note_no`)**:
+  - Menambahkan validasi pendeteksian duplikasi nomor Surat Jalan dari supplier yang sama pada tanggal kedatangan yang sama.
+  - Memberikan pesan error penolakan jelas jika nomor Surat Jalan tersebut sudah pernah dibuat sebelumnya pada dokumen aktif untuk mencegah *double-receiving*.
+- [x] **4. Keandalan Upload Master Material di Lingkungan Serverless (Stateless)**:
+  - Menggantikan ketergantungan dictionary in-memory `previews_cache` di Python dengan penyimpanan staging database `master_previews` agar import file Excel master material tidak gagal saat worker Vercel berganti instance.
+- [x] **5. Pencatatan Tindakan Korektif saat Un-Hold (Resolusi Penahanan Mutu & Dokumen)**:
+  - Menyediakan pencatatan *Resolution Notes* (tindakan korektif / catatan penyelesaian) via prompt SweetAlert2 pada transisi melepaskan status Hold (`send_to_qc` setelah hold admin, atau `qc_approve` setelah hold QC) sehingga tercatat utuh dalam riwayat audit trail ISO dan membersihkan status pending aktif.
+- [x] **6. Perbaikan Error 500 saat Pengiriman Ulang Dokumen Hasil Revisi (`return_to_checker`)**:
+  - Mengonversi `sheet` (`sqlite3.Row`) menjadi dictionary murni di `update_tally_sheet` dan `export_tally_sheet` untuk mencegah `AttributeError: 'sqlite3.Row' object has no attribute 'get'`.
+  - Mengizinkan status `returned_to_checker` di samping `draft` dan `admin_hold` pada verifikasi status dokumen di `PUT /api/tally-sheets/{id}`.
+  - Membersihkan catatan kendala pending (`pending_category` dan `pending_reason`) saat Checker menyerahkan ulang dokumen ke Admin Warehouse (`new_status == "waiting_admin"`), sembari tetap menjaga rekaman audit trail revisi di `tally_history`.
+
+---
+
+## 🚀 5. Ide Pengembangan Mendatang (Backlog / Opsional)
 
 Berikut adalah usulan fitur lanjutan yang dapat diaktifkan jika diperlukan oleh operasional lapangan:
 
@@ -128,7 +183,21 @@ Berikut adalah usulan fitur lanjutan yang dapat diaktifkan jika diperlukan oleh 
     1. *Sheet 1: Ringkasan Audit ISO* (Metadata dokumen kontrol `FORM-WHS-ISO-008 Rev. 02`, KPI ringkasan, First-Pass Acceptance Rate, lembar pengesahan 3 tanda tangan).
     2. *Sheet 2: Detail Ketertelusuran Material* (21 kolom audit trail, formula sum kuantiti, auto-filter, zebra styling).
     3. *Sheet 3: Log Ketidaksesuaian & Status Hold* (Laporan penanganan deviasi ISO Clause 8.7).
-- [ ] **Integrasi Notifikasi Real-time (Webhook / Email / WhatsApp)**:
-  - Mengirim notifikasi otomatis ke Admin Warehouse saat Checker meneruskan draf baru, atau ke QC saat material siap uji mutu.
-- [ ] **Barcode / QR Code Scanner**:
-  - Dukungan pemindaian kamera HP / scanner barcode untuk membaca nomor Surat Jalan atau batch material secara instan di gudang.
+- [x] **Integrasi Webhook Notifikasi Real-time Terintegrasi**:
+  - [x] **1. Backend Dispatcher Service & Background Tasks**:
+    - Service asynchronous non-blocking di `backend/main.py` menggunakan `requests` + `threading` (daemon thread) dengan timeout 4 detik.
+    - Menghasilkan signature autentikasi `X-Tally-Signature` berbasis HMAC-SHA256, header event `X-Tally-Event`, ID unik pengiriman `X-Tally-Delivery`, dan timestamp `X-Tally-Timestamp`.
+  - [x] **2. Pemicu Event Otomatis pada Workflow**:
+    - Trigger `tally.submitted` saat Checker menyerahkan draf ke Admin Warehouse (`create_tally_sheet` & `update_tally_sheet`).
+    - Trigger `tally.verified_to_qc` saat Admin Warehouse meneruskan dokumen ke QC (`transition_tally_sheet`).
+    - Trigger `tally.held` saat dokumen ditahan oleh Admin atau QC dengan alasan & kategori hold (`transition_tally_sheet`).
+    - Trigger `tally.unheld` saat dokumen dilepas dari hold dengan catatan tindakan korektif (`transition_tally_sheet`).
+    - Trigger `tally.approved_stock_uu` saat QC meluluskan dokumen (Stock Ter-UU).
+    - Trigger `tally.rejected` saat QC menolak mutu material.
+    - Trigger `tally.returned_to_checker` saat dokumen dikembalikan ke Checker.
+    - Trigger `tally.cancelled` saat dokumen dibatalkan oleh Super Admin (`cancel_tally_sheet`).
+  - [x] **3. Endpoint Pengaturan & Uji Coba (Test Ping)**:
+    - Endpoint `POST /api/settings/webhook/test` untuk simulasi ping ke URL target dan memberikan respon status HTTP serta latensi round-trip ms.
+    - Kolom `webhook_config_json` pada tabel `settings` SQLite & Supabase Cloud (`supabase_schema.sql`).
+  - [x] **4. Panel UI Konfigurasi Webhook di Halaman Pengaturan (`/settings`)**:
+    - Komponen Card 5 interaktif: Switch toggle On/Off, input URL target, generator Secret Key acak 32-karakter, checklist 7 event alur kerja dengan badge alur & deskripsi, tombol test ping dengan visual latency status, dan penyimpanan terintegrasi.

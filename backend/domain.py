@@ -268,6 +268,21 @@ class BeritaAcaraRecord:
         }
 
 
+DEFAULT_WEBHOOK_CONFIG = {
+    "enabled": False,
+    "url": "",
+    "secret": "",
+    "events": [
+        "tally.submitted",
+        "tally.verified_to_qc",
+        "tally.held",
+        "tally.unheld",
+        "tally.approved_stock_uu",
+        "tally.rejected",
+        "tally.cancelled"
+    ]
+}
+
 # ----------------- OOP: SETTINGS SERVICE -----------------
 class SettingsService:
     """Manages application-wide settings with dynamic configuration."""
@@ -290,6 +305,7 @@ class SettingsService:
                 "workflow_stages": DEFAULT_WORKFLOW_STAGES,
                 "qa_documents": DEFAULT_QA_DOCUMENTS,
                 "role_permissions": DEFAULT_ROLE_PERMISSIONS,
+                "webhook_config": DEFAULT_WEBHOOK_CONFIG,
                 "updated_at": "",
                 "updated_by_name": ""
             }
@@ -319,6 +335,16 @@ class SettingsService:
 
         # Load dynamic Role Permissions
         role_perms = PermissionService.get_permissions(conn)
+
+        # Load dynamic Webhook Configuration
+        webhook_cfg = DEFAULT_WEBHOOK_CONFIG
+        if "webhook_config_json" in row.keys() and row["webhook_config_json"]:
+            try:
+                loaded_wh = json.loads(row["webhook_config_json"])
+                if isinstance(loaded_wh, dict):
+                    webhook_cfg = {**DEFAULT_WEBHOOK_CONFIG, **loaded_wh}
+            except Exception:
+                pass
                 
         return {
             "id": "global",
@@ -328,12 +354,13 @@ class SettingsService:
             "workflow_stages": DEFAULT_WORKFLOW_STAGES,
             "qa_documents": qa_docs,
             "role_permissions": role_perms,
+            "webhook_config": webhook_cfg,
             "updated_at": row["updated_at"],
             "updated_by_name": row["updated_by_name"]
         }
 
     @staticmethod
-    def update_settings(conn, required: Dict[str, bool], duplicate_rule: str, hold_categories: List[str], admin_name: str, qa_documents: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def update_settings(conn, required: Dict[str, bool], duplicate_rule: str, hold_categories: List[str], admin_name: str, qa_documents: Optional[Dict[str, Any]] = None, webhook_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         cats = [c.strip() for c in hold_categories if c and c.strip()]
         if not cats:
@@ -341,17 +368,25 @@ class SettingsService:
 
         qa_docs_to_save = {**DEFAULT_QA_DOCUMENTS, **(qa_documents or {})}
 
-        # Preserve existing permissions
+        # Preserve existing permissions & webhook config
         existing_row = conn.execute("SELECT * FROM settings WHERE id = 'global'").fetchone()
         existing_perms_json = json.dumps(DEFAULT_ROLE_PERMISSIONS)
-        if existing_row and "role_permissions_json" in existing_row.keys() and existing_row["role_permissions_json"]:
-            existing_perms_json = existing_row["role_permissions_json"]
+        existing_wh_json = json.dumps(DEFAULT_WEBHOOK_CONFIG)
+
+        if existing_row:
+            if "role_permissions_json" in existing_row.keys() and existing_row["role_permissions_json"]:
+                existing_perms_json = existing_row["role_permissions_json"]
+            if "webhook_config_json" in existing_row.keys() and existing_row["webhook_config_json"]:
+                existing_wh_json = existing_row["webhook_config_json"]
+
+        if webhook_config is not None:
+            existing_wh_json = json.dumps({**DEFAULT_WEBHOOK_CONFIG, **webhook_config})
 
         conn.execute("""
             INSERT OR REPLACE INTO settings 
-            (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, role_permissions_json, updated_at, updated_by_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, ("global", json.dumps(required), duplicate_rule, json.dumps(cats), json.dumps(qa_docs_to_save), existing_perms_json, now, admin_name))
+            (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, role_permissions_json, webhook_config_json, updated_at, updated_by_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("global", json.dumps(required), duplicate_rule, json.dumps(cats), json.dumps(qa_docs_to_save), existing_perms_json, existing_wh_json, now, admin_name))
         
         return {
             "id": "global",
@@ -361,6 +396,7 @@ class SettingsService:
             "workflow_stages": DEFAULT_WORKFLOW_STAGES,
             "qa_documents": qa_docs_to_save,
             "role_permissions": json.loads(existing_perms_json),
+            "webhook_config": json.loads(existing_wh_json),
             "updated_at": now,
             "updated_by_name": admin_name
         }
@@ -508,7 +544,13 @@ class WorkflowManager:
                 raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user_role}' tidak memiliki izin 'admin_verify' untuk memverifikasi dokumen ke QC.")
             new_status = "waiting_qc"
             new_handler_role = "qc"
-            log_detail = f"Admin Warehouse ({user['name']}) memverifikasi dokumen & meneruskan ke Tim QC untuk sampling/uji mutu"
+            if old_status == "admin_hold":
+                resolution = reason or "Verifikasi fisik & dokumen telah selesai diselesaikan"
+                log_detail = f"Admin Warehouse ({user['name']}) melepaskan Hold Admin & meneruskan ke QC. Tindakan Korektif: {resolution}"
+                pending_cat = ""
+                pending_rsn = ""
+            else:
+                log_detail = f"Admin Warehouse ({user['name']}) memverifikasi dokumen & meneruskan ke Tim QC untuk sampling/uji mutu"
 
         # 4. ACTION: return_to_checker (Admin mengembalikan ke Checker untuk revisi fisik)
         elif action == "return_to_checker":
@@ -548,13 +590,20 @@ class WorkflowManager:
             new_status = "completed"
             new_handler_role = "closed"
             qc_stat = "passed"
-            qc_nts = reason or "Lolos Uji Mutu & Stock Ter-UU"
+            if old_status == "qc_hold":
+                resolution = reason or "Pemeriksaan mutu / analisis lab ulang selesai dan memenuhi standar"
+                qc_nts = f"Lolos Uji Mutu (Stock Ter-UU) setelah Hold. Resolusi: {resolution}"
+                log_detail = f"QC ({user['name']}) melepaskan QC Hold & meluluskan material: {resolution}"
+            else:
+                qc_nts = reason or "Lolos Uji Mutu & Stock Ter-UU"
+                log_detail = f"QC ({user['name']}) meluluskan material: Lolos Uji Mutu, Dokumen Selesai (Stock Ter-UU)"
             qc_by = user["name"]
             qc_at = now
             finalized_at = now
             finalized_by = user["id"]
             finalized_by_name = user["name"]
-            log_detail = f"QC ({user['name']}) meluluskan material: Lolos Uji Mutu, Dokumen Selesai (Stock Ter-UU)"
+            pending_cat = ""
+            pending_rsn = ""
 
         # 7. ACTION: qc_reject (QC menolak mutu material)
         elif action == "qc_reject":

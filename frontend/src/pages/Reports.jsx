@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   Clock,
   Download,
+  ExternalLink,
   FileCheck,
   FileSpreadsheet,
   Filter,
@@ -28,13 +29,17 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import PageHeader from "@/components/PageHeader";
 import Pager from "@/components/Pager";
+import SupplierSearch from "@/components/SupplierSearch";
 import { TableSkeleton } from "@/components/ui/skeleton";
+import TallyQuickModal from "@/components/TallyQuickModal";
 import { api, downloadReportExcel, errMsg } from "@/lib/api";
 
 const LIMIT = 20;
 
 export default function Reports() {
   const [activeTab, setActiveTab] = useState("traceability");
+  const [activePreset, setActivePreset] = useState("all");
+  const [previewSheetId, setPreviewSheetId] = useState(null);
   const [filters, setFilters] = useState({
     start_date: "",
     end_date: "",
@@ -70,6 +75,14 @@ export default function Reports() {
     shelf_life: []
   });
 
+  const isDirty = (
+    filters.start_date !== applied.start_date ||
+    filters.end_date !== applied.end_date ||
+    filters.status !== applied.status ||
+    filters.supplier !== applied.supplier ||
+    filters.q !== applied.q
+  );
+
   const loadData = useCallback(() => {
     setLoading(true);
     const params = {
@@ -101,6 +114,7 @@ export default function Reports() {
     const empty = { start_date: "", end_date: "", status: "all", supplier: "", q: "" };
     setFilters(empty);
     setApplied(empty);
+    setActivePreset("all");
     setPage(1);
   };
 
@@ -136,6 +150,7 @@ export default function Reports() {
     const updated = { ...filters, start_date: newStart, end_date: newEnd };
     setFilters(updated);
     setApplied(updated);
+    setActivePreset(preset);
     setPage(1);
   };
 
@@ -221,7 +236,11 @@ export default function Reports() {
               <FileSpreadsheet className="h-5 w-5" />
             </div>
           </div>
-          <div className="text-2xl font-bold font-display text-slate-900">{kpi.total_docs ?? "-"}</div>
+          {loading ? (
+            <div className="h-8 w-24 bg-slate-200 animate-pulse rounded-md mt-1" />
+          ) : (
+            <div className="text-2xl font-bold font-display text-slate-900">{kpi.total_docs ?? "-"}</div>
+          )}
           <div className="text-[11px] text-slate-500">
             Total armada/SJ masuk tercatat
           </div>
@@ -231,11 +250,15 @@ export default function Reports() {
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-2" data-testid="kpi-total-items">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Baris Material</span>
-            <div className="h-9 w-9 rounded-lg bg-indigo-50 grid place-items-center text-indigo-700">
+            <div className="h-9 w-9 rounded-lg bg-slate-100 grid place-items-center text-[#0B2149]">
               <Layers className="h-5 w-5" />
             </div>
           </div>
-          <div className="text-2xl font-bold font-display text-slate-900">{kpi.total_items ?? "-"}</div>
+          {loading ? (
+            <div className="h-8 w-28 bg-slate-200 animate-pulse rounded-md mt-1" />
+          ) : (
+            <div className="text-2xl font-bold font-display text-slate-900">{kpi.total_items ?? "-"}</div>
+          )}
           <div className="text-[11px] text-slate-500">
             Total Qty: <strong className="text-slate-700">{Number(kpi.total_qty || 0).toLocaleString("id-ID")}</strong> unit
           </div>
@@ -249,7 +272,11 @@ export default function Reports() {
               <Award className="h-5 w-5" />
             </div>
           </div>
-          <div className="text-2xl font-bold font-display text-emerald-700">{kpi.first_pass_yield ?? 100}%</div>
+          {loading ? (
+            <div className="h-8 w-20 bg-slate-200 animate-pulse rounded-md mt-1" />
+          ) : (
+            <div className="text-2xl font-bold font-display text-emerald-700">{kpi.first_pass_yield ?? 100}%</div>
+          )}
           <div className="text-[11px] text-slate-500 flex items-center justify-between">
             <span>Target ISO: &ge; 98.0%</span>
             <span className="text-emerald-700 font-semibold">{kpi.completed_docs} Selesai</span>
@@ -264,9 +291,13 @@ export default function Reports() {
               <AlertTriangle className="h-5 w-5" />
             </div>
           </div>
-          <div className={`text-2xl font-bold font-display ${kpi.hold_docs > 0 ? "text-amber-700" : "text-slate-900"}`}>
-            {kpi.hold_docs ?? 0}
-          </div>
+          {loading ? (
+            <div className="h-8 w-16 bg-slate-200 animate-pulse rounded-md mt-1" />
+          ) : (
+            <div className={`text-2xl font-bold font-display ${kpi.hold_docs > 0 ? "text-amber-700" : "text-slate-900"}`}>
+              {kpi.hold_docs ?? 0}
+            </div>
+          )}
           <div className="text-[11px] text-slate-500">
             {kpi.hold_docs > 0 ? "Perlu tindak lanjut rekonsiliasi" : "Nihil deviasi terbuka"}
           </div>
@@ -274,121 +305,154 @@ export default function Reports() {
       </div>
 
       {/* Filter Bar */}
-      <div className="rounded-xl border bg-white p-4 sm:p-5 shadow-sm space-y-4" data-testid="reports-filter-card">
+      <div className="rounded-xl border bg-white p-4 sm:p-5 shadow-sm space-y-4 no-print print:hidden" data-testid="reports-filter-card">
         {/* Quick Presets */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
           <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
             <Filter className="h-3.5 w-3.5 text-blue-700" /> Filter Cepat Periode:
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => applyPreset("today")}
-              className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-300 px-3 py-1 text-xs font-medium text-slate-700 transition"
-            >
-              Hari Ini
-            </button>
-            <button
-              type="button"
-              onClick={() => applyPreset("week")}
-              className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-300 px-3 py-1 text-xs font-medium text-slate-700 transition"
-            >
-              7 Hari Terakhir
-            </button>
-            <button
-              type="button"
-              onClick={() => applyPreset("month")}
-              className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-300 px-3 py-1 text-xs font-medium text-slate-700 transition"
-            >
-              Bulan Ini
-            </button>
-            <button
-              type="button"
-              onClick={() => applyPreset("all")}
-              className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-300 px-3 py-1 text-xs font-medium text-slate-700 transition"
-            >
-              Semua Periode
-            </button>
+            {[
+              { id: "today", label: "Hari Ini" },
+              { id: "week", label: "7 Hari Terakhir" },
+              { id: "month", label: "Bulan Ini" },
+              { id: "all", label: "Semua Periode" }
+            ].map((p) => {
+              const isActive = activePreset === p.id;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => applyPreset(p.id)}
+                  className={`rounded-lg px-3 py-1 text-xs font-medium transition-all ${
+                    isActive
+                      ? "bg-blue-700 text-white font-bold shadow-xs border border-blue-800"
+                      : "border border-slate-200 bg-slate-50 text-slate-700 hover:bg-blue-50 hover:border-blue-300"
+                  }`}
+                  data-testid={`preset-${p.id}`}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
         {/* Detailed Filter Inputs */}
-        <form onSubmit={handleApply} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-          <div>
-            <label className="text-[11px] font-semibold text-slate-600 block mb-1">Dari Tanggal</label>
-            <Input
-              type="date"
-              value={filters.start_date}
-              onChange={(e) => setFilters({ ...filters, start_date: e.target.value })}
-              className="bg-white text-xs"
-            />
-          </div>
-
-          <div>
-            <label className="text-[11px] font-semibold text-slate-600 block mb-1">Sampai Tanggal</label>
-            <Input
-              type="date"
-              value={filters.end_date}
-              onChange={(e) => setFilters({ ...filters, end_date: e.target.value })}
-              className="bg-white text-xs"
-            />
-          </div>
-
-          <div>
-            <label className="text-[11px] font-semibold text-slate-600 block mb-1">Status Mutu / Alur</label>
-            <Select
-              value={filters.status}
-              onValueChange={(val) => setFilters({ ...filters, status: val })}
-            >
-              <SelectTrigger className="bg-white text-xs">
-                <SelectValue placeholder="Pilih status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua Status</SelectItem>
-                <SelectItem value="completed">Selesai (Stock Ter-UU)</SelectItem>
-                <SelectItem value="hold">Hanya Status Hold (Tertahan)</SelectItem>
-                <SelectItem value="in_progress">Dalam Proses (Antrean)</SelectItem>
-                <SelectItem value="waiting_admin">Menunggu Admin WH</SelectItem>
-                <SelectItem value="waiting_qc">Menunggu QC</SelectItem>
-                <SelectItem value="draft">Draf Checker</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="lg:col-span-2">
-            <label className="text-[11px] font-semibold text-slate-600 block mb-1">Pencarian No. SJ / PO / Plat / Material</label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+        <form onSubmit={handleApply} className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div>
+              <label className="text-[11px] font-semibold text-slate-600 block mb-1">Dari Tanggal</label>
               <Input
-                placeholder="No. SJ, PO, Plat truk, batch, atau kode..."
-                value={filters.q}
-                onChange={(e) => setFilters({ ...filters, q: e.target.value })}
-                className="pl-8 bg-white text-xs"
+                type="date"
+                value={filters.start_date}
+                onChange={(e) => {
+                  setActivePreset(null);
+                  setFilters({ ...filters, start_date: e.target.value });
+                }}
+                className="bg-white text-xs h-9"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] font-semibold text-slate-600 block mb-1">Sampai Tanggal</label>
+              <Input
+                type="date"
+                value={filters.end_date}
+                onChange={(e) => {
+                  setActivePreset(null);
+                  setFilters({ ...filters, end_date: e.target.value });
+                }}
+                className="bg-white text-xs h-9"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] font-semibold text-slate-600 block mb-1">Status Mutu / Alur</label>
+              <Select
+                value={filters.status}
+                onValueChange={(val) => setFilters({ ...filters, status: val })}
+              >
+                <SelectTrigger className="bg-white text-xs h-9">
+                  <SelectValue placeholder="Pilih status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Status</SelectItem>
+                  <SelectItem value="completed">Selesai (Stock Ter-UU)</SelectItem>
+                  <SelectItem value="hold">Hanya Status Hold (Tertahan)</SelectItem>
+                  <SelectItem value="in_progress">Dalam Proses (Antrean)</SelectItem>
+                  <SelectItem value="waiting_admin">Menunggu Admin WH</SelectItem>
+                  <SelectItem value="waiting_qc">Menunggu QC</SelectItem>
+                  <SelectItem value="draft">Draf Checker</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-semibold text-slate-600 block mb-1">Filter Vendor / Supplier</label>
+              <SupplierSearch
+                value={filters.supplier}
+                supplierName={filters.supplier}
+                onSelect={(s) => setFilters({ ...filters, supplier: s.name || s.code })}
+                onClear={() => setFilters({ ...filters, supplier: "" })}
+                testId="filter-supplier-search"
               />
             </div>
           </div>
 
-          <div className="sm:col-span-2 lg:col-span-5 flex items-center justify-end gap-2 pt-1">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={handleReset}
-              className="text-xs text-slate-600 hover:text-slate-900"
-            >
-              <X className="mr-1 h-3.5 w-3.5" /> Reset
-            </Button>
-            <Button
-              type="submit"
-              className="bg-blue-700 hover:bg-blue-800 text-xs text-white px-5"
-            >
-              Terapkan Filter
-            </Button>
+          {/* Row 2: Search input + Buttons */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-1">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <Input
+                placeholder="Cari No. SJ, PO, Plat armada, kode/nama material, atau nomor batch..."
+                value={filters.q}
+                onChange={(e) => setFilters({ ...filters, q: e.target.value })}
+                className="pl-8 pr-8 bg-white text-xs h-9"
+              />
+              {filters.q && (
+                <button
+                  type="button"
+                  onClick={() => setFilters({ ...filters, q: "" })}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-0.5 rounded-full hover:bg-slate-100 transition"
+                  title="Bersihkan teks pencarian"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 shrink-0">
+              {isDirty && (
+                <span className="text-[11px] text-amber-600 font-semibold px-2 py-1 rounded bg-amber-50 border border-amber-200">
+                  Filter belum diterapkan
+                </span>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={handleReset}
+                className="text-xs text-slate-600 hover:text-slate-900 h-9 px-3"
+              >
+                <X className="mr-1 h-3.5 w-3.5" /> Reset
+              </Button>
+              <Button
+                type="submit"
+                className={`text-xs text-white h-9 px-5 transition-all ${
+                  isDirty
+                    ? "bg-blue-700 hover:bg-blue-800 shadow-md font-bold ring-2 ring-blue-400/50"
+                    : "bg-slate-800 hover:bg-slate-900 font-semibold"
+                }`}
+              >
+                Terapkan Filter
+              </Button>
+            </div>
           </div>
         </form>
       </div>
 
       {/* ISO Report Navigation Tabs */}
-      <div className="border-b border-slate-200">
+      <div className="border-b border-slate-200 no-print print:hidden">
         <nav className="flex space-x-2 sm:space-x-6 overflow-x-auto text-xs font-semibold">
           <button
             type="button"
@@ -519,7 +583,24 @@ export default function Reports() {
                               <tr key={it.id || idx} className="hover:bg-slate-50/80 transition-colors">
                                 <td className="py-3 px-3 text-center font-mono text-slate-500">{rowNo}</td>
                                 <td className="py-3 px-3 font-mono text-slate-800 whitespace-nowrap">{it.arrival_date || "-"}</td>
-                                <td className="py-3 px-3 font-mono font-semibold text-blue-900 whitespace-nowrap">{it.doc_no}</td>
+                                <td className="py-3 px-3 whitespace-nowrap">
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => setPreviewSheetId(it.sheet_id || it.id)}
+                                      className="font-mono font-bold text-blue-900 hover:text-blue-700 hover:underline cursor-pointer inline-flex items-center gap-1 group text-left transition"
+                                      title="Klik untuk melihat pratinjau cepat dokumen"
+                                    >
+                                      <span>{it.doc_no}</span>
+                                      <ExternalLink className="h-3 w-3 text-blue-500 opacity-40 group-hover:opacity-100 transition-opacity shrink-0" />
+                                    </button>
+                                    {it.has_berita_acara ? (
+                                      <span className="px-1.5 py-0.2 rounded bg-amber-100 border border-amber-300 text-amber-900 text-[10px] font-bold" title="Berita Acara Dilampirkan">
+                                        BA
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                </td>
                                 <td className="py-3 px-3 whitespace-nowrap">
                                   <div className="font-semibold text-slate-900">{it.delivery_note_no || "-"}</div>
                                   <div className="text-[11px] text-slate-500 font-mono">PO: {it.po_no || "-"}</div>
@@ -577,7 +658,22 @@ export default function Reports() {
                             <div className="flex items-start justify-between gap-2">
                               <div>
                                 <span className="text-[11px] font-mono text-slate-400 mr-2">#{rowNo}</span>
-                                <span className="font-mono font-bold text-blue-900 text-xs">{it.doc_no}</span>
+                                <div className="inline-flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewSheetId(it.sheet_id || it.id)}
+                                    className="font-mono font-bold text-blue-900 hover:text-blue-700 hover:underline text-xs inline-flex items-center gap-1 text-left"
+                                    title="Klik untuk membuka pratinjau cepat dokumen"
+                                  >
+                                    <span>{it.doc_no}</span>
+                                    <ExternalLink className="h-3 w-3 text-blue-500 opacity-60 shrink-0" />
+                                  </button>
+                                  {it.has_berita_acara ? (
+                                    <span className="px-1.5 py-0.2 rounded bg-amber-100 border border-amber-300 text-amber-900 text-[9px] font-bold">
+                                      BA
+                                    </span>
+                                  ) : null}
+                                </div>
                                 <div className="text-xs font-semibold text-slate-900 mt-0.5">{it.material_name}</div>
                               </div>
                               <span
@@ -616,7 +712,7 @@ export default function Reports() {
                       })}
                     </div>
 
-                    <div className="border-t border-slate-100 px-4 py-3">
+                    <div className="border-t border-slate-100 px-4 py-3 no-print print:hidden">
                       <Pager page={page} total={data.total} limit={LIMIT} onChange={setPage} />
                     </div>
                   </>
@@ -642,54 +738,106 @@ export default function Reports() {
                     <div className="text-sm font-semibold text-slate-700">Belum ada data transaksi vendor pada periode ini</div>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-[#0B2149] text-white font-semibold">
-                        <tr>
-                          <th className="py-3 px-3 w-10 text-center">No</th>
-                          <th className="py-3 px-3">Nama Vendor / Supplier</th>
-                          <th className="py-3 px-3">Kode MKVZ</th>
-                          <th className="py-3 px-3 text-center">Total Pengiriman (SJ)</th>
-                          <th className="py-3 px-3 text-right">Total Volume Masuk</th>
-                          <th className="py-3 px-3 text-center">Selesai (Ter-UU)</th>
-                          <th className="py-3 px-3 text-center">Kasus Hold</th>
-                          <th className="py-3 px-3 text-right">Acceptance Rate</th>
-                          <th className="py-3 px-3 text-center">Grade Kinerja</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 text-slate-700">
-                        {vendorList.map((v, idx) => (
-                          <tr key={v.supplier_code || idx} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="py-3 px-3 text-center font-mono text-slate-500">{idx + 1}</td>
-                            <td className="py-3 px-3 font-semibold text-slate-900">{v.supplier_name}</td>
-                            <td className="py-3 px-3 font-mono text-slate-500">{v.supplier_code}</td>
-                            <td className="py-3 px-3 text-center font-bold text-slate-800">{v.total_docs} SJ</td>
-                            <td className="py-3 px-3 text-right font-mono font-semibold text-slate-900">
-                              {Number(v.total_qty || 0).toLocaleString("id-ID")} unit
-                            </td>
-                            <td className="py-3 px-3 text-center text-emerald-700 font-bold">{v.completed_docs}</td>
-                            <td className="py-3 px-3 text-center font-bold text-amber-700">{v.hold_docs}</td>
-                            <td className="py-3 px-3 text-right font-mono font-bold text-blue-900">
-                              {v.acceptance_rate}%
-                            </td>
-                            <td className="py-3 px-3 text-center">
-                              <span
-                                className={`inline-block px-3 py-1 rounded-full text-[11px] font-bold border ${
-                                  v.grade_color === "emerald"
-                                    ? "bg-emerald-50 text-emerald-800 border-emerald-300"
-                                    : v.grade_color === "amber"
-                                    ? "bg-amber-50 text-amber-800 border-amber-300"
-                                    : "bg-rose-50 text-rose-800 border-rose-300"
-                                }`}
-                              >
-                                {v.grade}
-                              </span>
-                            </td>
+                  <>
+                    <div className="hidden lg:block overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-[#0B2149] text-white font-semibold">
+                          <tr>
+                            <th className="py-3 px-3 w-10 text-center">No</th>
+                            <th className="py-3 px-3">Nama Vendor / Supplier</th>
+                            <th className="py-3 px-3">Kode MKVZ</th>
+                            <th className="py-3 px-3 text-center">Total Pengiriman (SJ)</th>
+                            <th className="py-3 px-3 text-right">Total Volume Masuk</th>
+                            <th className="py-3 px-3 text-center">Selesai (Ter-UU)</th>
+                            <th className="py-3 px-3 text-center">Kasus Hold</th>
+                            <th className="py-3 px-3 text-right">Acceptance Rate</th>
+                            <th className="py-3 px-3 text-center">Grade Kinerja</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-700">
+                          {vendorList.map((v, idx) => (
+                            <tr key={v.supplier_code || idx} className="hover:bg-slate-50/80 transition-colors">
+                              <td className="py-3 px-3 text-center font-mono text-slate-500">{idx + 1}</td>
+                              <td className="py-3 px-3 font-semibold text-slate-900">{v.supplier_name}</td>
+                              <td className="py-3 px-3 font-mono text-slate-500">{v.supplier_code}</td>
+                              <td className="py-3 px-3 text-center font-bold text-slate-800">{v.total_docs} SJ</td>
+                              <td className="py-3 px-3 text-right font-mono font-semibold text-slate-900">
+                                {Number(v.total_qty || 0).toLocaleString("id-ID")} unit
+                              </td>
+                              <td className="py-3 px-3 text-center text-emerald-700 font-bold">{v.completed_docs}</td>
+                              <td className="py-3 px-3 text-center font-bold text-amber-700">{v.hold_docs}</td>
+                              <td className="py-3 px-3 text-right font-mono font-bold text-blue-900">
+                                {v.acceptance_rate}%
+                              </td>
+                              <td className="py-3 px-3 text-center">
+                                <span
+                                  className={`inline-block px-3 py-1 rounded-full text-[11px] font-bold border ${
+                                    v.grade_color === "emerald"
+                                      ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                                      : v.grade_color === "amber"
+                                      ? "bg-amber-50 text-amber-800 border-amber-300"
+                                      : "bg-rose-50 text-rose-800 border-rose-300"
+                                  }`}
+                                >
+                                  {v.grade}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mobile Cards for Tab 2 */}
+                    <div className="lg:hidden divide-y divide-slate-100">
+                      {vendorList.map((v, idx) => (
+                        <div key={v.supplier_code || idx} className="p-4 space-y-2.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <span className="text-[11px] font-mono text-slate-400 mr-2">#{idx + 1}</span>
+                              <span className="font-semibold text-slate-900 text-sm">{v.supplier_name}</span>
+                              {v.supplier_code && (
+                                <div className="text-xs font-mono text-slate-500 mt-0.5">Kode MKVZ: {v.supplier_code}</div>
+                              )}
+                            </div>
+                            <span
+                              className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold border shrink-0 ${
+                                v.grade_color === "emerald"
+                                  ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                                  : v.grade_color === "amber"
+                                  ? "bg-amber-50 text-amber-800 border-amber-300"
+                                  : "bg-rose-50 text-rose-800 border-rose-300"
+                              }`}
+                            >
+                              Grade {v.grade}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                            <div>
+                              <span className="text-slate-500 block text-[11px]">Total Pengiriman</span>
+                              <strong className="text-slate-800">{v.total_docs} Surat Jalan</strong>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block text-[11px]">Total Volume</span>
+                              <strong className="font-mono text-slate-900">{Number(v.total_qty || 0).toLocaleString("id-ID")} unit</strong>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block text-[11px]">Lolos (Ter-UU) / Hold</span>
+                              <span>
+                                <strong className="text-emerald-700">{v.completed_docs}</strong> /{" "}
+                                <strong className={v.hold_docs > 0 ? "text-amber-700" : "text-slate-600"}>{v.hold_docs}</strong>
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block text-[11px]">Acceptance Rate</span>
+                              <strong className="text-blue-900 font-bold">{v.acceptance_rate}%</strong>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </>
             )}
@@ -716,56 +864,142 @@ export default function Reports() {
                     </p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-[#7F1D1D] text-white font-semibold">
-                        <tr>
-                          <th className="py-3 px-3 w-10 text-center">No</th>
-                          <th className="py-3 px-3">Tgl Masuk</th>
-                          <th className="py-3 px-3">No. Tally</th>
-                          <th className="py-3 px-3">Surat Jalan / PO</th>
-                          <th className="py-3 px-3">Vendor</th>
-                          <th className="py-3 px-3">Material &amp; Batch</th>
-                          <th className="py-3 px-3 text-center">Kategori Deviasi</th>
-                          <th className="py-3 px-3">Uraian Masalah / Alasan Hold</th>
-                          <th className="py-3 px-3 text-center">Status</th>
-                          <th className="py-3 px-3">PIC Bertugas</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 text-slate-700">
-                        {ncrList.map((ncr, idx) => (
-                          <tr key={ncr.id || idx} className="hover:bg-amber-50/40 transition-colors">
-                            <td className="py-3 px-3 text-center font-mono text-slate-500">{idx + 1}</td>
-                            <td className="py-3 px-3 font-mono text-slate-800 whitespace-nowrap">{ncr.arrival_date || "-"}</td>
-                            <td className="py-3 px-3 font-mono font-bold text-red-900 whitespace-nowrap">{ncr.doc_no}</td>
-                            <td className="py-3 px-3 whitespace-nowrap">
-                              <div className="font-semibold text-slate-900">{ncr.delivery_note_no || "-"}</div>
-                              <div className="text-[11px] text-slate-500 font-mono">PO: {ncr.po_no || "-"}</div>
-                            </td>
-                            <td className="py-3 px-3 font-medium text-slate-800 max-w-[150px] truncate">{ncr.supplier_name || "-"}</td>
-                            <td className="py-3 px-3">
-                              <div className="font-semibold text-slate-900">{ncr.material_name}</div>
-                              <div className="text-[11px] text-slate-500 font-mono">Batch: {ncr.batch_fisik || "-"}</div>
-                            </td>
-                            <td className="py-3 px-3 text-center whitespace-nowrap">
-                              <span className="inline-block px-2.5 py-0.5 rounded bg-amber-100 text-amber-900 font-bold border border-amber-300 text-[11px]">
-                                {ncr.pending_category || "Lain-lain"}
-                              </span>
-                            </td>
-                            <td className="py-3 px-3 max-w-[220px] text-slate-800 font-medium">{ncr.pending_reason || "-"}</td>
-                            <td className="py-3 px-3 text-center whitespace-nowrap">
-                              <span className="inline-block px-2 py-0.5 rounded bg-red-100 text-red-800 font-bold uppercase text-[10px] border border-red-200">
-                                {ncr.status}
-                              </span>
-                            </td>
-                            <td className="py-3 px-3 text-[11px] text-slate-600 whitespace-nowrap">
-                              {ncr.updated_by_name || ncr.created_by_name || "-"}
-                            </td>
+                  <>
+                    <div className="hidden lg:block overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-[#7F1D1D] text-white font-semibold">
+                          <tr>
+                            <th className="py-3 px-3 w-10 text-center">No</th>
+                            <th className="py-3 px-3">Tgl Masuk</th>
+                            <th className="py-3 px-3">No. Tally</th>
+                            <th className="py-3 px-3">Surat Jalan / PO</th>
+                            <th className="py-3 px-3">Vendor</th>
+                            <th className="py-3 px-3">Material &amp; Batch</th>
+                            <th className="py-3 px-3 text-center">Kategori Deviasi</th>
+                            <th className="py-3 px-3">Uraian Masalah / Alasan Hold</th>
+                            <th className="py-3 px-3 text-center">Status</th>
+                            <th className="py-3 px-3">PIC Bertugas</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-700">
+                          {ncrList.map((ncr, idx) => (
+                            <tr key={ncr.id || idx} className="hover:bg-amber-50/40 transition-colors">
+                              <td className="py-3 px-3 text-center font-mono text-slate-500">{idx + 1}</td>
+                              <td className="py-3 px-3 font-mono text-slate-800 whitespace-nowrap">{ncr.arrival_date || "-"}</td>
+                              <td className="py-3 px-3 whitespace-nowrap">
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewSheetId(ncr.sheet_id || ncr.id)}
+                                    className="font-mono font-bold text-red-900 hover:text-red-700 hover:underline cursor-pointer inline-flex items-center gap-1 group text-left transition"
+                                    title="Klik untuk melihat pratinjau cepat dokumen"
+                                  >
+                                    <span>{ncr.doc_no}</span>
+                                    <ExternalLink className="h-3 w-3 text-red-500 opacity-40 group-hover:opacity-100 transition-opacity shrink-0" />
+                                  </button>
+                                  {ncr.has_berita_acara ? (
+                                    <span className="px-1.5 py-0.2 rounded bg-amber-100 border border-amber-300 text-amber-900 text-[10px] font-bold" title="Berita Acara Dilampirkan">
+                                      BA
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </td>
+                              <td className="py-3 px-3 whitespace-nowrap">
+                                <div className="font-semibold text-slate-900">{ncr.delivery_note_no || "-"}</div>
+                                <div className="text-[11px] text-slate-500 font-mono">PO: {ncr.po_no || "-"}</div>
+                              </td>
+                              <td className="py-3 px-3 font-medium text-slate-800 max-w-[150px] truncate">{ncr.supplier_name || "-"}</td>
+                              <td className="py-3 px-3">
+                                <div className="font-semibold text-slate-900">{ncr.material_name}</div>
+                                <div className="text-[11px] text-slate-500 font-mono">Batch: {ncr.batch_fisik || "-"}</div>
+                              </td>
+                              <td className="py-3 px-3 text-center whitespace-nowrap">
+                                <span className="inline-block px-2.5 py-0.5 rounded bg-amber-100 text-amber-900 font-bold border border-amber-300 text-[11px]">
+                                  {ncr.pending_category || "Lain-lain"}
+                                </span>
+                              </td>
+                              <td className="py-3 px-3 max-w-[220px] text-slate-800 font-medium">{ncr.pending_reason || "-"}</td>
+                              <td className="py-3 px-3 text-center whitespace-nowrap">
+                                <span className="inline-block px-2 py-0.5 rounded bg-red-100 text-red-800 font-bold uppercase text-[10px] border border-red-200">
+                                  {ncr.status}
+                                </span>
+                              </td>
+                              <td className="py-3 px-3 text-[11px] text-slate-600 whitespace-nowrap">
+                                {ncr.updated_by_name || ncr.created_by_name || "-"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mobile Cards for Tab 3 */}
+                    <div className="lg:hidden divide-y divide-slate-100">
+                      {ncrList.map((ncr, idx) => (
+                        <div key={ncr.id || idx} className="p-4 space-y-2.5 bg-amber-50/15">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <span className="text-[11px] font-mono text-slate-400 mr-2">#{idx + 1}</span>
+                              <div className="inline-flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewSheetId(ncr.sheet_id || ncr.id)}
+                                  className="font-mono font-bold text-red-900 hover:text-red-700 hover:underline text-xs inline-flex items-center gap-1 text-left"
+                                  title="Klik untuk membuka pratinjau cepat dokumen"
+                                >
+                                  <span>{ncr.doc_no}</span>
+                                  <ExternalLink className="h-3 w-3 text-red-500 opacity-60 shrink-0" />
+                                </button>
+                                {ncr.has_berita_acara ? (
+                                  <span className="px-1.5 py-0.2 rounded bg-amber-100 border border-amber-300 text-amber-900 text-[9px] font-bold">
+                                    BA
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="text-xs font-semibold text-slate-900 mt-0.5">{ncr.material_name}</div>
+                            </div>
+                            <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 font-bold uppercase text-[10px] border border-red-200 shrink-0">
+                              {ncr.status}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-[11px] bg-white p-2.5 rounded-lg border border-slate-200">
+                            <div>
+                              <span className="text-slate-500">Tgl Masuk:</span>{" "}
+                              <strong className="font-mono text-slate-800">{ncr.arrival_date || "-"}</strong>
+                            </div>
+                            <div>
+                              <span className="text-slate-500">Surat Jalan:</span>{" "}
+                              <strong className="text-slate-800">{ncr.delivery_note_no || "-"}</strong>
+                            </div>
+                            <div>
+                              <span className="text-slate-500">Batch Fisik:</span>{" "}
+                              <strong className="font-mono text-slate-800">{ncr.batch_fisik || "-"}</strong>
+                            </div>
+                            <div>
+                              <span className="text-slate-500">Vendor:</span>{" "}
+                              <strong className="text-slate-800 truncate block">{ncr.supplier_name || "-"}</strong>
+                            </div>
+                          </div>
+
+                          <div className="rounded-lg bg-amber-50 border border-amber-200 p-2.5 text-xs text-amber-950 space-y-1">
+                            <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                              <AlertTriangle className="h-3.5 w-3.5 text-amber-700" />
+                              Kategori: {ncr.pending_category || "Lain-lain"}
+                            </div>
+                            <div className="text-slate-800 pl-5">
+                              {ncr.pending_reason || "Tidak ada catatan spesifik"}
+                            </div>
+                          </div>
+
+                          <div className="text-[11px] text-slate-500 flex items-center justify-between pt-0.5">
+                            <span>PIC Verifikasi:</span>
+                            <span className="font-medium text-slate-800">{ncr.updated_by_name || ncr.created_by_name || "-"}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </>
             )}
@@ -789,69 +1023,204 @@ export default function Reports() {
                     <div className="text-sm font-semibold text-slate-700">Belum ada data expired date pada periode ini</div>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-[#0B2149] text-white font-semibold">
-                        <tr>
-                          <th className="py-3 px-3 w-10 text-center">No</th>
-                          <th className="py-3 px-3">Tgl Kedatangan</th>
-                          <th className="py-3 px-3">Material &amp; Batch Fisik</th>
-                          <th className="py-3 px-3">Vendor</th>
-                          <th className="py-3 px-3 text-center">Tgl Produksi</th>
-                          <th className="py-3 px-3 text-center">Tgl Kedaluwarsa</th>
-                          <th className="py-3 px-3 text-right">Sisa Hari Simpan</th>
-                          <th className="py-3 px-3 text-right">% Sisa Umur</th>
-                          <th className="py-3 px-3 text-center">Kategori Keamanan</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 text-slate-700">
-                        {shelfLifeList.map((sl, idx) => (
-                          <tr key={sl.id || idx} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="py-3 px-3 text-center font-mono text-slate-500">{idx + 1}</td>
-                            <td className="py-3 px-3 font-mono text-slate-800 whitespace-nowrap">{sl.arrival_date || "-"}</td>
-                            <td className="py-3 px-3">
-                              <div className="font-semibold text-slate-900">{sl.material_name}</div>
-                              <div className="text-[11px] text-slate-500 font-mono">
-                                Kode: {sl.material_code} | Batch: <span className="text-slate-800 font-bold">{sl.batch_fisik || "-"}</span>
-                              </div>
-                            </td>
-                            <td className="py-3 px-3 font-medium text-slate-800 max-w-[150px] truncate">{sl.supplier_name || "-"}</td>
-                            <td className="py-3 px-3 text-center font-mono text-slate-600">{sl.production_date || "-"}</td>
-                            <td className="py-3 px-3 text-center font-mono font-bold text-slate-900">{sl.expired_date || "-"}</td>
-                            <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">
-                              {sl.remaining_days !== null ? `${sl.remaining_days} hari` : "-"}
-                            </td>
-                            <td className="py-3 px-3 text-right font-mono font-bold text-blue-900">
-                              {sl.remaining_pct !== null ? `${sl.remaining_pct}%` : "-"}
-                            </td>
-                            <td className="py-3 px-3 text-center">
-                              <span
-                                className={`inline-block px-3 py-1 rounded-full text-[11px] font-bold border ${
-                                  sl.shelf_status === "safe"
-                                    ? "bg-emerald-50 text-emerald-800 border-emerald-300"
-                                    : sl.shelf_status === "warning"
-                                    ? "bg-amber-50 text-amber-800 border-amber-300"
-                                    : "bg-rose-50 text-rose-800 border-rose-300"
-                                }`}
-                              >
-                                {sl.shelf_status === "safe"
-                                  ? "Aman (Fresh)"
-                                  : sl.shelf_status === "warning"
-                                  ? "Perhatian (Medium)"
-                                  : "Kritis / Near Expired"}
-                              </span>
-                            </td>
+                  <>
+                    <div className="hidden lg:block overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-[#0B2149] text-white font-semibold">
+                          <tr>
+                            <th className="py-3 px-3 w-10 text-center">No</th>
+                            <th className="py-3 px-3">Tgl Kedatangan</th>
+                            <th className="py-3 px-3">Material &amp; Batch Fisik</th>
+                            <th className="py-3 px-3">Vendor</th>
+                            <th className="py-3 px-3 text-center">Tgl Produksi</th>
+                            <th className="py-3 px-3 text-center">Tgl Kedaluwarsa</th>
+                            <th className="py-3 px-3 text-right">Sisa Hari Simpan</th>
+                            <th className="py-3 px-3 text-right">% Sisa Umur</th>
+                            <th className="py-3 px-3 text-center">Kategori Keamanan</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-700">
+                          {shelfLifeList.map((sl, idx) => (
+                            <tr key={sl.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                              <td className="py-3 px-3 text-center font-mono text-slate-500">{idx + 1}</td>
+                              <td className="py-3 px-3 font-mono text-slate-800 whitespace-nowrap">{sl.arrival_date || "-"}</td>
+                              <td className="py-3 px-3">
+                                <div className="font-semibold text-slate-900">{sl.material_name}</div>
+                                <div className="text-[11px] text-slate-500 font-mono flex items-center gap-1.5 flex-wrap">
+                                  <span>Kode: {sl.material_code}</span>
+                                  <span>| Batch: <strong className="text-slate-800">{sl.batch_fisik || "-"}</strong></span>
+                                  {sl.doc_no && (
+                                    <>
+                                      <span>| Tally:</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setPreviewSheetId(sl.sheet_id || sl.id)}
+                                        className="text-blue-700 hover:text-blue-900 hover:underline font-bold inline-flex items-center gap-0.5"
+                                        title="Klik untuk melihat pratinjau cepat dokumen"
+                                      >
+                                        <span>{sl.doc_no}</span>
+                                        <ExternalLink className="h-2.5 w-2.5 opacity-60" />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="py-3 px-3 font-medium text-slate-800 max-w-[150px] truncate">{sl.supplier_name || "-"}</td>
+                              <td className="py-3 px-3 text-center font-mono text-slate-600">{sl.production_date || "-"}</td>
+                              <td className="py-3 px-3 text-center font-mono font-bold text-slate-900">{sl.expired_date || "-"}</td>
+                              <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">
+                                {sl.remaining_days !== null ? `${sl.remaining_days} hari` : "-"}
+                              </td>
+                              <td className="py-3 px-3 text-right font-mono font-bold text-blue-900">
+                                {sl.remaining_pct !== null ? `${sl.remaining_pct}%` : "-"}
+                              </td>
+                              <td className="py-3 px-3 text-center">
+                                <span
+                                  className={`inline-block px-3 py-1 rounded-full text-[11px] font-bold border ${
+                                    sl.shelf_status === "safe"
+                                      ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                                      : sl.shelf_status === "warning"
+                                      ? "bg-amber-50 text-amber-800 border-amber-300"
+                                      : "bg-rose-50 text-rose-800 border-rose-300"
+                                  }`}
+                                >
+                                  {sl.shelf_status === "safe"
+                                    ? "Aman (Fresh)"
+                                    : sl.shelf_status === "warning"
+                                    ? "Perhatian (Medium)"
+                                    : "Kritis / Near Expired"}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mobile Cards for Tab 4 */}
+                    <div className="lg:hidden divide-y divide-slate-100">
+                      {shelfLifeList.map((sl, idx) => (
+                        <div key={sl.id || idx} className="p-4 space-y-2.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <span className="text-[11px] font-mono text-slate-400 mr-2">#{idx + 1}</span>
+                              <span className="font-semibold text-slate-900 text-xs">{sl.material_name}</span>
+                              <div className="text-[11px] text-slate-500 font-mono mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                <span>Kode: {sl.material_code}</span>
+                                <span>| Batch: <strong className="text-slate-800 font-bold">{sl.batch_fisik || "-"}</strong></span>
+                                {sl.doc_no && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewSheetId(sl.sheet_id || sl.id)}
+                                    className="text-blue-700 hover:text-blue-900 hover:underline font-bold inline-flex items-center gap-0.5 ml-1"
+                                    title="Klik untuk melihat pratinjau cepat dokumen"
+                                  >
+                                    <span>{sl.doc_no}</span>
+                                    <ExternalLink className="h-2.5 w-2.5 opacity-60" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <span
+                              className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${
+                                sl.shelf_status === "safe"
+                                  ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                                  : sl.shelf_status === "warning"
+                                  ? "bg-amber-50 text-amber-800 border-amber-300"
+                                  : "bg-rose-50 text-rose-800 border-rose-300"
+                              }`}
+                            >
+                              {sl.shelf_status === "safe"
+                                ? "Aman (Fresh)"
+                                : sl.shelf_status === "warning"
+                                ? "Perhatian (Medium)"
+                                : "Kritis / Near Expired"}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                            <div>
+                              <span className="text-slate-500 block text-[11px]">Tgl Datang:</span>
+                              <strong className="font-mono text-slate-800">{sl.arrival_date || "-"}</strong>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block text-[11px]">Vendor:</span>
+                              <strong className="text-slate-800 truncate block">{sl.supplier_name || "-"}</strong>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block text-[11px]">Tgl Produksi:</span>
+                              <strong className="font-mono text-slate-700">{sl.production_date || "-"}</strong>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block text-[11px]">Tgl Kedaluwarsa:</span>
+                              <strong className="font-mono text-slate-900">{sl.expired_date || "-"}</strong>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-xs pt-1 px-1">
+                            <div>
+                              <span className="text-slate-500 text-[11px]">Sisa Hari:</span>{" "}
+                              <strong className="font-mono text-slate-800">
+                                {sl.remaining_days !== null ? `${sl.remaining_days} hari` : "-"}
+                              </strong>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 text-[11px]">Sisa Umur:</span>{" "}
+                              <strong className="font-mono text-blue-900">
+                                {sl.remaining_pct !== null ? `${sl.remaining_pct}%` : "-"}
+                              </strong>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </>
             )}
           </>
         )}
       </div>
+
+      {/* Official ISO Sign-off Section for Print */}
+      <div className="hidden print:block avoid-break mt-8 pt-6 border-t-2 border-slate-800 text-xs">
+        <div className="text-center font-bold text-slate-900 mb-6 uppercase tracking-wider">
+          Lembar Verifikasi &amp; Pengesahan Dokumen Audit (ISO 9001:2015 / GMP)
+        </div>
+        <div className="grid grid-cols-3 gap-6 text-center">
+          <div className="border border-slate-400 p-3 rounded space-y-12">
+            <div className="font-semibold text-slate-700">Dibuat Oleh (Checker Gudang)</div>
+            <div>
+              <div className="border-b border-slate-400 w-3/4 mx-auto mb-1"></div>
+              <div className="text-[10px] text-slate-500">Nama &amp; Tanda Tangan / Tgl</div>
+            </div>
+          </div>
+          <div className="border border-slate-400 p-3 rounded space-y-12">
+            <div className="font-semibold text-slate-700">Diverifikasi (Spv. Warehouse)</div>
+            <div>
+              <div className="border-b border-slate-400 w-3/4 mx-auto mb-1"></div>
+              <div className="text-[10px] text-slate-500">Nama &amp; Tanda Tangan / Tgl</div>
+            </div>
+          </div>
+          <div className="border border-slate-400 p-3 rounded space-y-12">
+            <div className="font-semibold text-slate-700">Disetujui (Quality Control / QA)</div>
+            <div>
+              <div className="border-b border-slate-400 w-3/4 mx-auto mb-1"></div>
+              <div className="text-[10px] text-slate-500">Nama &amp; Tanda Tangan / Tgl</div>
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-between items-center text-[10px] text-slate-500 mt-4">
+          <span>Dicetak dari Sistem Material Tally Hub</span>
+          <span>PT Diamond Cold Storage - Plant 2111 Cibitung</span>
+        </div>
+      </div>
+
+      {/* Tally Document Quick Preview Modal (Opsi A & B) */}
+      <TallyQuickModal
+        sheetId={previewSheetId}
+        onClose={() => setPreviewSheetId(null)}
+      />
     </div>
   );
 }

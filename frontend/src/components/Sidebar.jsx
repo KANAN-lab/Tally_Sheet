@@ -74,7 +74,7 @@ export function SidebarUser({ collapsed }) {
 export default function Sidebar({ collapsed }) {
   return (
     <aside
-      className={`hidden lg:flex fixed inset-y-0 left-0 z-30 flex-col bg-[#0B2149] transition-[width] duration-200 ${collapsed ? "w-20" : "w-64"}`}
+      className={`hidden lg:flex fixed inset-y-0 left-0 z-30 flex-col bg-[#0B2149] transition-[width] duration-200 no-print print:hidden ${collapsed ? "w-20" : "w-64"}`}
       data-testid="sidebar"
     >
       {collapsed ? <div className="py-5 grid place-items-center"><Boxes className="h-7 w-7 text-white" /></div> : <Brand />}

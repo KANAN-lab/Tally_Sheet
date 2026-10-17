@@ -4,6 +4,9 @@ import json
 import uuid
 import sqlite3
 import hashlib
+import hmac
+import time
+import threading
 import datetime
 from typing import Optional, List, Dict, Any
 from pathlib import Path
@@ -23,13 +26,15 @@ try:
     from domain import (
         WorkflowManager, SettingsService, DEFAULT_HOLD_CATEGORIES, DEFAULT_WORKFLOW_STAGES,
         QADocumentRegistry, BeritaAcaraRecord, DEFAULT_QA_DOCUMENTS,
-        ROLE_METADATA, PERMISSION_DEFINITIONS, DEFAULT_ROLE_PERMISSIONS, PermissionService
+        ROLE_METADATA, PERMISSION_DEFINITIONS, DEFAULT_ROLE_PERMISSIONS, PermissionService,
+        DEFAULT_WEBHOOK_CONFIG
     )
 except ImportError:
     from backend.domain import (
         WorkflowManager, SettingsService, DEFAULT_HOLD_CATEGORIES, DEFAULT_WORKFLOW_STAGES,
         QADocumentRegistry, BeritaAcaraRecord, DEFAULT_QA_DOCUMENTS,
-        ROLE_METADATA, PERMISSION_DEFINITIONS, DEFAULT_ROLE_PERMISSIONS, PermissionService
+        ROLE_METADATA, PERMISSION_DEFINITIONS, DEFAULT_ROLE_PERMISSIONS, PermissionService,
+        DEFAULT_WEBHOOK_CONFIG
     )
 
 # Constants
@@ -100,8 +105,8 @@ def sync_from_supabase_if_needed(conn, sheet_id: str = None):
             if r_set.status_code == 200 and r_set.json():
                 s_data = r_set.json()[0]
                 conn.execute("""
-                    INSERT OR REPLACE INTO settings (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, role_permissions_json, updated_at, updated_by_name)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO settings (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, role_permissions_json, webhook_config_json, updated_at, updated_by_name)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     "global",
                     s_data.get("required_json") or "{}",
@@ -109,6 +114,7 @@ def sync_from_supabase_if_needed(conn, sheet_id: str = None):
                     s_data.get("hold_categories_json") or "[]",
                     s_data.get("qa_documents_json") or "{}",
                     s_data.get("role_permissions_json") or "{}",
+                    s_data.get("webhook_config_json") or "{}",
                     s_data.get("updated_at") or "",
                     s_data.get("updated_by_name") or ""
                 ))
@@ -513,6 +519,8 @@ def init_db():
             c.execute("ALTER TABLE settings ADD COLUMN qa_documents_json TEXT DEFAULT '{}'")
         if "role_permissions_json" not in set_cols:
             c.execute("ALTER TABLE settings ADD COLUMN role_permissions_json TEXT DEFAULT '{}'")
+        if "webhook_config_json" not in set_cols:
+            c.execute("ALTER TABLE settings ADD COLUMN webhook_config_json TEXT DEFAULT '{}'")
     except Exception as e:
         print("Notice: check settings columns:", e)
 
@@ -934,6 +942,92 @@ def update_permissions(req: UpdatePermissionsRequest, admin: dict = Depends(requ
         "permissions": updated
     }
 
+# ----------------- WEBHOOK DISPATCHER SERVICE -----------------
+class WebhookService:
+    @staticmethod
+    def get_config(conn) -> dict:
+        try:
+            row = conn.execute("SELECT webhook_config_json FROM settings WHERE id = 'global'").fetchone()
+            if row and "webhook_config_json" in row.keys() and row["webhook_config_json"]:
+                loaded = json.loads(row["webhook_config_json"])
+                if isinstance(loaded, dict):
+                    return {**DEFAULT_WEBHOOK_CONFIG, **loaded}
+        except Exception:
+            pass
+        return DEFAULT_WEBHOOK_CONFIG
+
+    @classmethod
+    def dispatch(cls, event: str, sheet_data: dict, actor: dict, notes: str = "", extra: dict = None):
+        """
+        Dispatches webhook event asynchronously in a daemon background thread so it never blocks the user request.
+        """
+        def _send():
+            try:
+                conn = get_db()
+                cfg = cls.get_config(conn)
+                conn.close()
+
+                if not cfg.get("enabled") or not (cfg.get("url") or "").strip():
+                    return
+
+                subscribed = cfg.get("events") or []
+                if event not in subscribed and event != "tally.test_ping":
+                    return
+
+                delivery_id = str(uuid.uuid4())
+                now_dt = datetime.datetime.now(datetime.timezone.utc)
+                now_iso = now_dt.isoformat()
+                now_ts = int(now_dt.timestamp())
+
+                payload = {
+                    "event": event,
+                    "delivery_id": delivery_id,
+                    "timestamp": now_iso,
+                    "actor": {
+                        "id": actor.get("id", ""),
+                        "name": actor.get("name", "System"),
+                        "role": actor.get("role", "system")
+                    },
+                    "data": {
+                        "sheet_id": sheet_data.get("id") or sheet_data.get("sheet_id") or "",
+                        "doc_no": sheet_data.get("doc_no") or "",
+                        "delivery_note_no": sheet_data.get("delivery_note_no") or "",
+                        "po_no": sheet_data.get("po_no") or "",
+                        "arrival_date": sheet_data.get("arrival_date") or "",
+                        "truck_plate": sheet_data.get("truck_plate") or "",
+                        "vendor_name": sheet_data.get("supplier_name") or "",
+                        "status": sheet_data.get("status") or "",
+                        "previous_status": (extra or {}).get("previous_status") or "",
+                        "pending_category": sheet_data.get("pending_category") or "",
+                        "pending_reason": sheet_data.get("pending_reason") or "",
+                        "has_berita_acara": bool(sheet_data.get("has_berita_acara")),
+                        "action_notes": notes or "",
+                        **(extra or {})
+                    }
+                }
+
+                payload_bytes = json.dumps(payload, separators=(',', ':')).encode("utf-8")
+                target_url = cfg["url"].strip()
+                headers = {
+                    "Content-Type": "application/json",
+                    "User-Agent": "MaterialTallyHub-Webhook/1.0",
+                    "X-Tally-Event": event,
+                    "X-Tally-Delivery": delivery_id,
+                    "X-Tally-Timestamp": str(now_ts)
+                }
+
+                secret = (cfg.get("secret") or "").strip()
+                if secret:
+                    sig = hmac.new(secret.encode("utf-8"), payload_bytes, hashlib.sha256).hexdigest()
+                    headers["X-Tally-Signature"] = f"sha256={sig}"
+
+                requests.post(target_url, data=payload_bytes, headers=headers, timeout=4)
+            except Exception as e:
+                print(f"Notice: Webhook dispatch error ({event}):", e)
+
+        thread = threading.Thread(target=_send, daemon=True)
+        thread.start()
+
 # ----------------- SETTINGS -----------------
 @app.get("/api/settings")
 def get_settings():
@@ -945,8 +1039,8 @@ def get_settings():
             if r.status_code == 200 and r.json():
                 s_data = r.json()[0]
                 conn.execute("""
-                    INSERT OR REPLACE INTO settings (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, role_permissions_json, updated_at, updated_by_name)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO settings (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, role_permissions_json, webhook_config_json, updated_at, updated_by_name)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     "global",
                     s_data.get("required_json") or "{}",
@@ -954,6 +1048,7 @@ def get_settings():
                     s_data.get("hold_categories_json") or "[]",
                     s_data.get("qa_documents_json") or "{}",
                     s_data.get("role_permissions_json") or "{}",
+                    s_data.get("webhook_config_json") or "{}",
                     s_data.get("updated_at") or "",
                     s_data.get("updated_by_name") or ""
                 ))
@@ -970,11 +1065,12 @@ class SettingsRequest(BaseModel):
     duplicate_rule: str
     hold_categories: Optional[List[str]] = None
     qa_documents: Optional[Dict[str, Any]] = None
+    webhook_config: Optional[Dict[str, Any]] = None
 
 @app.put("/api/settings")
 def update_settings(req: SettingsRequest, admin: dict = Depends(require_admin)):
     conn = get_db()
-    res = SettingsService.update_settings(conn, req.required, req.duplicate_rule, req.hold_categories or DEFAULT_HOLD_CATEGORIES, admin["name"], req.qa_documents)
+    res = SettingsService.update_settings(conn, req.required, req.duplicate_rule, req.hold_categories or DEFAULT_HOLD_CATEGORIES, admin["name"], req.qa_documents, req.webhook_config)
     conn.commit()
     conn.close()
 
@@ -988,6 +1084,7 @@ def update_settings(req: SettingsRequest, admin: dict = Depends(require_admin)):
                 "hold_categories_json": json.dumps(res["hold_categories"]),
                 "qa_documents_json": json.dumps(res["qa_documents"]),
                 "role_permissions_json": json.dumps(res.get("role_permissions", DEFAULT_ROLE_PERMISSIONS)),
+                "webhook_config_json": json.dumps(res.get("webhook_config", DEFAULT_WEBHOOK_CONFIG)),
                 "updated_at": res["updated_at"],
                 "updated_by_name": admin["name"]
             }]
@@ -1003,8 +1100,79 @@ def update_settings(req: SettingsRequest, admin: dict = Depends(require_admin)):
             print("Notice: push settings to Supabase warning:", e)
     
     req_str = ", ".join([k for k, v in req.required.items() if v])
-    log_activity(admin["id"], admin["name"], "update_settings", "settings", "global", f"Kolom wajib: {req_str}; aturan duplikat: {req.duplicate_rule}; {len(res['hold_categories'])} kategori hold; QA Docs dinamis diperbarui")
+    log_activity(admin["id"], admin["name"], "update_settings", "settings", "global", f"Kolom wajib: {req_str}; aturan duplikat: {req.duplicate_rule}; {len(res['hold_categories'])} kategori hold; QA Docs & Webhook diperbarui")
     return res
+
+class TestWebhookRequest(BaseModel):
+    url: str
+    secret: Optional[str] = ""
+
+@app.post("/api/settings/webhook/test")
+def test_webhook(req: TestWebhookRequest, admin: dict = Depends(require_admin)):
+    target_url = (req.url or "").strip()
+    if not target_url.startswith("http://") and not target_url.startswith("https://"):
+        raise HTTPException(status_code=400, detail="URL Webhook harus diawali dengan http:// atau https://")
+
+    delivery_id = str(uuid.uuid4())
+    now_dt = datetime.datetime.now(datetime.timezone.utc)
+    now_iso = now_dt.isoformat()
+    now_ts = int(now_dt.timestamp())
+
+    payload = {
+        "event": "tally.test_ping",
+        "delivery_id": delivery_id,
+        "timestamp": now_iso,
+        "actor": {
+            "id": admin["id"],
+            "name": admin["name"],
+            "role": admin["role"]
+        },
+        "data": {
+            "message": "Ping uji coba integrasi Webhook dari Material Tally Hub (Plant 2111 Cibitung)",
+            "test_mode": True,
+            "status": "connected"
+        }
+    }
+    payload_bytes = json.dumps(payload, separators=(',', ':')).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "MaterialTallyHub-Webhook/1.0",
+        "X-Tally-Event": "tally.test_ping",
+        "X-Tally-Delivery": delivery_id,
+        "X-Tally-Timestamp": str(now_ts)
+    }
+    secret = (req.secret or "").strip()
+    if secret:
+        sig = hmac.new(secret.encode("utf-8"), payload_bytes, hashlib.sha256).hexdigest()
+        headers["X-Tally-Signature"] = f"sha256={sig}"
+
+    t0 = time.time()
+    try:
+        r = requests.post(target_url, data=payload_bytes, headers=headers, timeout=5)
+        elapsed_ms = round((time.time() - t0) * 1000)
+        return {
+            "success": 200 <= r.status_code < 300,
+            "status_code": r.status_code,
+            "status_text": r.reason or f"HTTP {r.status_code}",
+            "elapsed_ms": elapsed_ms,
+            "message": f"Uji coba berhasil terkirim (Status: {r.status_code}, Respon: {elapsed_ms}ms)"
+        }
+    except requests.exceptions.Timeout:
+        return {
+            "success": False,
+            "status_code": 408,
+            "status_text": "Request Timeout",
+            "elapsed_ms": 5000,
+            "message": "Gagal: Request timeout setelah 5 detik. Server tujuan tidak merespons."
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "status_code": 0,
+            "status_text": "Connection Failed",
+            "elapsed_ms": 0,
+            "message": f"Gagal menghubungi endpoint: {str(e)}"
+        }
 
 # ----------------- QA DOCUMENT CONTROL REGISTRY -----------------
 @app.get("/api/qa-docs")
@@ -1397,7 +1565,7 @@ async def preview_master(file: UploadFile = File(...), admin: dict = Depends(req
     deactivate_if_replace = sum(1 for c in existing_codes if c not in valid_set)
 
     preview_id = str(uuid.uuid4())
-    previews_cache[preview_id] = {
+    preview_data = {
         "filename": filename,
         "valid_rows": valid_rows,
         "total_rows": total_rows,
@@ -1406,6 +1574,34 @@ async def preview_master(file: UploadFile = File(...), admin: dict = Depends(req
         "name_col": name_col,
         "extra_cols": extra_cols
     }
+    previews_cache[preview_id] = preview_data
+
+    # Persist to database staging table for serverless instance parity
+    conn = get_db()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS master_previews (
+            id TEXT PRIMARY KEY,
+            data_json TEXT,
+            created_at TEXT
+        )
+    """)
+    now_prev = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    conn.execute("INSERT OR REPLACE INTO master_previews (id, data_json, created_at) VALUES (?, ?, ?)",
+                 (preview_id, json.dumps(preview_data), now_prev))
+    conn.commit()
+    conn.close()
+
+    # Also push staging to Supabase cloud if configured so any Vercel instance can commit
+    if SUPABASE_KEY and SUPABASE_URL:
+        try:
+            requests.post(
+                f"{SUPABASE_URL}/rest/v1/master_previews",
+                headers=get_sb_headers(),
+                json=[{"id": preview_id, "data_json": json.dumps(preview_data), "created_at": now_prev}],
+                timeout=5
+            )
+        except Exception as e:
+            print("Notice: Staging upload to Supabase master_previews warning:", e)
 
     return {
         "preview_id": preview_id,
@@ -1430,16 +1626,43 @@ class CommitMasterRequest(BaseModel):
 
 @app.post("/api/master/commit")
 def commit_master(req: CommitMasterRequest, admin: dict = Depends(require_admin)):
-    cached = previews_cache.get(req.preview_id)
+    conn = get_db()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS master_previews (
+            id TEXT PRIMARY KEY,
+            data_json TEXT,
+            created_at TEXT
+        )
+    """)
+    row_prev = conn.execute("SELECT data_json FROM master_previews WHERE id = ?", (req.preview_id,)).fetchone()
+    if row_prev and row_prev["data_json"]:
+        cached = json.loads(row_prev["data_json"])
+    elif req.preview_id in previews_cache:
+        cached = previews_cache.get(req.preview_id)
+    else:
+        # Fallback fetch from Supabase staging
+        cached = None
+        if SUPABASE_KEY and SUPABASE_URL:
+            try:
+                r_sb = requests.get(
+                    f"{SUPABASE_URL}/rest/v1/master_previews?id=eq.{req.preview_id}",
+                    headers=get_sb_headers(),
+                    timeout=5
+                )
+                if r_sb.status_code == 200 and r_sb.json():
+                    cached = json.loads(r_sb.json()[0]["data_json"])
+            except Exception as e:
+                print("Notice: Staging read from Supabase master_previews warning:", e)
+
     if not cached:
-        raise HTTPException(status_code=400, detail="Data pratinjau sudah kadaluarsa. Silakan upload ulang.")
+        conn.close()
+        raise HTTPException(status_code=400, detail="Data pratinjau sudah kadaluarsa atau tidak ditemukan. Silakan upload ulang.")
     
     valid_rows = cached["valid_rows"]
     filename = cached["filename"]
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     version_id = str(uuid.uuid4())
     
-    conn = get_db()
     last_v = conn.execute("SELECT max(version) FROM master_versions").fetchone()[0] or 0
     new_version = last_v + 1
 
@@ -1488,10 +1711,23 @@ def commit_master(req: CommitMasterRequest, admin: dict = Depends(require_admin)
         cached["total_rows"], len(valid_rows), cached["error_rows"], inserted, updated, deactivated, active_total
     ))
 
+    # Clean up DB staging
+    conn.execute("DELETE FROM master_previews WHERE id = ?", (req.preview_id,))
     conn.commit()
     conn.close()
 
-    del previews_cache[req.preview_id]
+    if req.preview_id in previews_cache:
+        del previews_cache[req.preview_id]
+
+    if SUPABASE_KEY and SUPABASE_URL:
+        try:
+            requests.delete(
+                f"{SUPABASE_URL}/rest/v1/master_previews?id=eq.{req.preview_id}",
+                headers=get_sb_headers(),
+                timeout=4
+            )
+        except Exception:
+            pass
 
     mode_label = "Tambah/Update Data" if req.mode == "upsert" else "Ganti Data"
     log_activity(admin["id"], admin["name"], "upload_master", "master_data", version_id,
@@ -1609,6 +1845,14 @@ def validate_items(conn, items: List[TallyItemInput], action: str, sheet_id: Opt
             errors.append({"row": i, "field": "production_date", "message": "Production Date tidak boleh lebih besar dari Expired Date"})
 
         if action in ("final", "submit_to_admin"):
+            # Positive quantity check
+            try:
+                qty_val = float(it.qty or 0)
+            except (ValueError, TypeError):
+                qty_val = 0.0
+            if qty_val <= 0:
+                errors.append({"row": i, "field": "qty", "message": "Kuantitas material fisik wajib diisi dan lebih besar dari 0 (positif)"})
+
             checks = {
                 "batch_fisik": (it.batch_fisik or "").strip(),
                 "supplier_batch": (it.supplier_batch or "").strip(),
@@ -1749,34 +1993,21 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
         conn.close()
         raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user.get('role')}' tidak memiliki izin 'tally_create' untuk membuat dokumen Tally Sheet.")
     
+    if req.action not in ("draft", "submit_to_admin"):
+        conn.close()
+        raise HTTPException(status_code=400, detail="Aksi tidak valid. Hanya 'draft' atau 'submit_to_admin' yang diizinkan saat pembuatan dokumen.")
+
     if req.action == "submit_to_admin" and not PermissionService.has_permission(conn, user.get("role", "user"), "tally_submit"):
         conn.close()
         raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user.get('role')}' tidak memiliki izin 'tally_submit' untuk menyerahkan dokumen ke Admin.")
 
     validate_items(conn, req.items, req.action)
 
-    sheet_id = str(uuid.uuid4())
-    doc_no = generate_doc_no(conn)
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    
-    # Workflow Status determination
-    if req.action == "submit_to_admin":
-        status = "waiting_admin"
-        handler_role = "warehouse_admin"
-        handler_name = ""
-    elif req.action == "final":
-        status = "completed"
-        handler_role = "closed"
-        handler_name = ""
-    else:
-        status = "draft"
-        handler_role = "checker"
-        handler_name = user["name"]
-
     delivery_note = (req.delivery_note_no or "").strip()
     po_num = (req.po_no or "").strip()
     sup_code = (req.supplier_code or "").strip()
     sup_name = (req.supplier_name or "").strip()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     arr_date = (req.arrival_date or "").strip() or now[:10]
     drv_name = (req.driver_name or "").strip()
     trk_plate = (req.truck_plate or "").strip()
@@ -1784,6 +2015,33 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
     if not trk_plate:
         conn.close()
         raise HTTPException(status_code=400, detail="Nomor Polisi Armada Truk wajib diisi (Mandatory).")
+
+    # Duplicate Delivery Note (Surat Jalan) check on submission
+    if delivery_note and req.action == "submit_to_admin":
+        dup_sj = conn.execute("""
+            SELECT doc_no, status, arrival_date FROM tally_sheets
+            WHERE status != 'cancelled'
+            AND upper(trim(delivery_note_no)) = ?
+        """, (delivery_note.upper(),)).fetchone()
+        if dup_sj:
+            conn.close()
+            raise HTTPException(
+                status_code=400,
+                detail=f"Nomor Surat Jalan '{delivery_note}' sudah terdaftar pada dokumen {dup_sj['doc_no']} (Status: {dup_sj['status'].upper()}). Harap periksa kembali untuk menghindari penerimaan ganda (double-receiving)."
+            )
+
+    sheet_id = str(uuid.uuid4())
+    doc_no = generate_doc_no(conn)
+    
+    # Workflow Status determination - completed ONLY via QC approval
+    if req.action == "submit_to_admin":
+        status = "waiting_admin"
+        handler_role = "warehouse_admin"
+        handler_name = ""
+    else:
+        status = "draft"
+        handler_role = "checker"
+        handler_name = user["name"]
 
     qa_code = QADocumentRegistry.resolve_tally_code(req.qa_doc_no, conn)
     has_ba = 1 if req.has_berita_acara else 0
@@ -1876,6 +2134,10 @@ def create_tally_sheet(req: TallySheetInput, user: dict = Depends(get_current_us
 
     log_action = "submit_tally" if status == "waiting_admin" else ("create_tally" if status == "draft" else "finalize_tally")
     log_activity(user["id"], user["name"], log_action, "tally_sheet", sheet_id, f"Tally sheet {doc_no} ({status}) dengan {len(req.items)} item. SJ: {delivery_note}, PO: {po_num}")
+
+    # Webhook Trigger: tally.submitted
+    if status == "waiting_admin":
+        WebhookService.dispatch("tally.submitted", sb_sheet, user, notes=initial_reason, extra={"previous_status": "draft"})
 
     return {"id": sheet_id, "doc_no": doc_no, "status": status}
 
@@ -1977,17 +2239,23 @@ def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends
         conn.close()
         raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user.get('role')}' tidak memiliki izin 'tally_edit' untuk mengubah dokumen Tally Sheet.")
 
+    if req.action not in ("draft", "submit_to_admin"):
+        conn.close()
+        raise HTTPException(status_code=400, detail="Aksi tidak valid. Hanya 'draft' atau 'submit_to_admin' yang diizinkan saat mengedit dokumen.")
+
     if req.action == "submit_to_admin" and not PermissionService.has_permission(conn, user.get("role", "user"), "tally_submit"):
         conn.close()
         raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user.get('role')}' tidak memiliki izin 'tally_submit' untuk menyerahkan dokumen ke Admin.")
 
     sync_from_supabase_if_needed(conn, sheet_id=sheet_id)
-    sheet = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
-    if not sheet:
+    sheet_row = conn.execute("SELECT * FROM tally_sheets WHERE id = ? OR doc_no = ?", (sheet_id, sheet_id)).fetchone()
+    if not sheet_row:
         conn.close()
         raise HTTPException(status_code=404, detail="Tally sheet tidak ditemukan.")
     
-    if sheet["status"] not in ("draft", "admin_hold"):
+    sheet = dict(sheet_row)
+    
+    if sheet["status"] not in ("draft", "admin_hold", "returned_to_checker"):
         conn.close()
         raise HTTPException(status_code=400, detail="Hanya dokumen Draft atau Revisi yang dapat diubah barisnya.")
     
@@ -1996,40 +2264,52 @@ def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     actual_id = sheet["id"]
 
+    delivery_note = (req.delivery_note_no or sheet.get("delivery_note_no") or "").strip()
+    po_num = (req.po_no or sheet.get("po_no") or "").strip()
+    sup_code = (req.supplier_code or sheet.get("supplier_code") or "").strip()
+    sup_name = (req.supplier_name or sheet.get("supplier_name") or "").strip()
+    arr_date = (req.arrival_date or sheet.get("arrival_date") or "").strip() or now[:10]
+    drv_name = (req.driver_name or sheet.get("driver_name") or "").strip()
+    trk_plate = (req.truck_plate or sheet.get("truck_plate") or "").strip()
+
+    if not trk_plate:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Nomor Polisi Armada Truk wajib diisi (Mandatory).")
+
+    # Duplicate Delivery Note check on update & submission
+    if delivery_note and req.action == "submit_to_admin":
+        dup_sj = conn.execute("""
+            SELECT doc_no, status, arrival_date FROM tally_sheets
+            WHERE status != 'cancelled'
+            AND id != ?
+            AND upper(trim(delivery_note_no)) = ?
+        """, (actual_id, delivery_note.upper(),)).fetchone()
+        if dup_sj:
+            conn.close()
+            raise HTTPException(
+                status_code=400,
+                detail=f"Nomor Surat Jalan '{delivery_note}' sudah terdaftar pada dokumen {dup_sj['doc_no']} (Status: {dup_sj['status'].upper()}). Harap periksa kembali untuk menghindari penerimaan ganda (double-receiving)."
+            )
+
+    # Workflow Status determination - completed ONLY via QC approval
     if req.action == "submit_to_admin":
         new_status = "waiting_admin"
         handler_role = "warehouse_admin"
-        handler_name = ""
-    elif req.action == "final":
-        new_status = "completed"
-        handler_role = "closed"
         handler_name = ""
     else:
         new_status = "draft"
         handler_role = "checker"
         handler_name = user["name"]
 
-    delivery_note = (req.delivery_note_no or sheet["delivery_note_no"] or "").strip()
-    po_num = (req.po_no or sheet["po_no"] or "").strip()
-    sup_code = (req.supplier_code or sheet["supplier_code"] or "").strip()
-    sup_name = (req.supplier_name or sheet["supplier_name"] or "").strip()
-    arr_date = (req.arrival_date or sheet["arrival_date"] or "").strip() or now[:10]
-    drv_name = (req.driver_name or sheet["driver_name"] or "").strip()
-    trk_plate = (req.truck_plate or sheet["truck_plate"] or "").strip()
-
-    if not trk_plate:
-        conn.close()
-        raise HTTPException(status_code=400, detail="Nomor Polisi Armada Truk wajib diisi (Mandatory).")
-
-    current_sheet_qa = sheet["qa_doc_no"] if "qa_doc_no" in sheet.keys() else None
+    current_sheet_qa = sheet.get("qa_doc_no")
     qa_code = QADocumentRegistry.resolve_tally_code(req.qa_doc_no or current_sheet_qa, conn)
     has_ba = 1 if req.has_berita_acara else (1 if (sheet.get("has_berita_acara") and req.has_berita_acara is not False) else 0)
-    current_sheet_ba_qa = sheet["ba_qa_doc_no"] if "ba_qa_doc_no" in sheet.keys() else None
+    current_sheet_ba_qa = sheet.get("ba_qa_doc_no")
     ba_qa_code = QADocumentRegistry.resolve_ba_code(req.ba_qa_doc_no or current_sheet_ba_qa, conn)
 
     if req.berita_acara:
         ba_rec = BeritaAcaraRecord(req.berita_acara)
-    elif "ba_data_json" in sheet.keys() and sheet["ba_data_json"]:
+    elif sheet.get("ba_data_json"):
         try:
             ba_rec = BeritaAcaraRecord(json.loads(sheet["ba_data_json"]))
         except Exception:
@@ -2043,6 +2323,9 @@ def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends
     ba_seal_cond = ba_rec.seal_condition if has_ba else ""
     ba_temp = ba_rec.container_temp_type if has_ba else ""
 
+    new_pending_cat = "" if new_status == "waiting_admin" else (sheet.get("pending_category") or "")
+    new_pending_rsn = "" if new_status == "waiting_admin" else (sheet.get("pending_reason") or "")
+
     conn.execute("""
         UPDATE tally_sheets 
         SET status = ?, updated_by = ?, updated_by_name = ?, updated_at = ?,
@@ -2051,7 +2334,8 @@ def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends
             arrival_date = ?, driver_name = ?, truck_plate = ?,
             current_handler_role = ?, current_handler_name = ?,
             qa_doc_no = ?, has_berita_acara = ?, ba_qa_doc_no = ?, ba_data_json = ?,
-            ba_container_no = ?, ba_seal_no = ?, ba_seal_condition = ?, ba_container_temp = ?
+            ba_container_no = ?, ba_seal_no = ?, ba_seal_condition = ?, ba_container_temp = ?,
+            pending_category = ?, pending_reason = ?
         WHERE id = ?
     """, (
         new_status, user["id"], user["name"], now,
@@ -2059,6 +2343,7 @@ def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends
         delivery_note, po_num, sup_code, sup_name, arr_date, drv_name, trk_plate,
         handler_role, handler_name,
         qa_code, has_ba, ba_qa_code, ba_json, ba_cont, ba_seal, ba_seal_cond, ba_temp,
+        new_pending_cat, new_pending_rsn,
         actual_id
     ))
 
@@ -2115,6 +2400,7 @@ def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends
         "supplier_code": sup_code, "supplier_name": sup_name,
         "arrival_date": arr_date, "driver_name": drv_name, "truck_plate": trk_plate,
         "current_handler_role": handler_role, "current_handler_name": handler_name,
+        "pending_category": new_pending_cat, "pending_reason": new_pending_rsn,
         "qa_doc_no": qa_code, "has_berita_acara": bool(has_ba), "ba_qa_doc_no": ba_qa_code,
         "ba_data_json": ba_json, "ba_container_no": ba_cont, "ba_seal_no": ba_seal,
         "ba_seal_condition": ba_seal_cond, "ba_container_temp": ba_temp,
@@ -2130,6 +2416,10 @@ def update_tally_sheet(sheet_id: str, req: TallySheetInput, user: dict = Depends
     })
 
     log_activity(user["id"], user["name"], f"update_{new_status}", "tally_sheet", actual_id, f"Tally sheet {sheet['doc_no']} ({new_status}) diperbarui")
+
+    # Webhook Trigger: tally.submitted jika diserahkan ke admin
+    if new_status == "waiting_admin" and sheet["status"] != "waiting_admin":
+        WebhookService.dispatch("tally.submitted", sb_sheet, user, notes=hist_reason, extra={"previous_status": sheet["status"]})
 
     return {"id": actual_id, "doc_no": sheet["doc_no"], "status": new_status}
 
@@ -2169,6 +2459,31 @@ def transition_tally_sheet(sheet_id: str, req: WorkflowTransitionInput, user: di
     })
 
     log_activity(user["id"], user["name"], f"transition_{action}", "tally_sheet", res["actual_id"], res["log_detail"])
+
+    # Webhook triggers for workflow transitions
+    event_map = {
+        "send_to_qc": "tally.verified_to_qc",
+        "verify_to_qc": "tally.verified_to_qc",
+        "admin_hold": "tally.held",
+        "qc_hold": "tally.held",
+        "qc_approve": "tally.approved_stock_uu",
+        "qc_reject": "tally.rejected",
+        "return_to_checker": "tally.returned_to_checker"
+    }
+    primary_event = event_map.get(action)
+    sheet_summary = {
+        **dict(sheet),
+        "id": res["actual_id"],
+        "status": res["new_status"],
+        "pending_category": res["pending_category"],
+        "pending_reason": res["pending_reason"]
+    }
+    if res["old_status"] in ["admin_hold", "qc_hold"] and res["new_status"] not in ["admin_hold", "qc_hold"]:
+        unhold_note = req.dict().get("resolution_notes") or req.dict().get("reason") or res["log_detail"]
+        WebhookService.dispatch("tally.unheld", sheet_summary, user, notes=unhold_note, extra={"previous_status": res["old_status"]})
+
+    if primary_event:
+        WebhookService.dispatch(primary_event, sheet_summary, user, notes=res["pending_reason"] or res["log_detail"], extra={"previous_status": res["old_status"]})
 
     return {
         "message": f"Dokumen berhasil diperbarui ke status '{res['new_status']}'",
@@ -2226,6 +2541,15 @@ def cancel_tally_sheet(sheet_id: str, req: CancelRequest, user: dict = Depends(g
     })
 
     log_activity(user["id"], user["name"], "cancel_tally", "tally_sheet", actual_id, f"Tally sheet {sheet['doc_no']} dibatalkan: {req.reason.strip()}")
+
+    # Webhook Trigger: tally.cancelled
+    WebhookService.dispatch("tally.cancelled", {
+        **dict(sheet),
+        "id": actual_id,
+        "status": "cancelled",
+        "cancel_reason": req.reason.strip()
+    }, user, notes=req.reason.strip(), extra={"previous_status": sheet["status"]})
+
     return {"message": "Tally sheet berhasil dibatalkan"}
 
 @app.get("/api/tally-sheets/{sheet_id}/history")
@@ -2286,6 +2610,7 @@ def export_tally_sheet(sheet_id: str):
     if not sheet:
         conn.close()
         raise HTTPException(status_code=404, detail="Tally sheet tidak ditemukan.")
+    sheet = dict(sheet)
     
     actual_id = sheet["id"]
     items = conn.execute("SELECT * FROM tally_items WHERE sheet_id = ? ORDER BY seq ASC", (actual_id,)).fetchall()
@@ -2486,7 +2811,8 @@ def get_reports_summary(
             ti.expired_date, ti.production_date, ti.pic_name,
             ts.doc_no, ts.delivery_note_no, ts.po_no, ts.truck_plate, ts.arrival_date,
             ts.status, ts.created_by_name, ts.updated_by_name, ts.qc_by_name, ts.qc_at,
-            ts.pending_category, ts.pending_reason, ts.created_at
+            ts.pending_category, ts.pending_reason, ts.created_at,
+            ts.has_berita_acara, ts.ba_no, ts.ba_qa_doc_no
         FROM tally_sheets ts
         JOIN tally_items ti ON ts.id = ti.sheet_id
         WHERE {where_str}
@@ -2547,7 +2873,8 @@ def get_reports_summary(
             ti.supplier_name, ti.batch_fisik,
             ts.doc_no, ts.delivery_note_no, ts.po_no, ts.truck_plate, ts.arrival_date,
             ts.status, ts.pending_category, ts.pending_reason,
-            ts.created_by_name, ts.updated_by_name, ts.created_at
+            ts.created_by_name, ts.updated_by_name, ts.created_at,
+            ts.has_berita_acara, ts.ba_no, ts.ba_qa_doc_no
         FROM tally_sheets ts
         JOIN tally_items ti ON ts.id = ti.sheet_id
         WHERE ({where_str}) AND (ts.status IN ('hold_admin', 'hold_qc', 'cancelled') OR ts.pending_category != '' OR ts.pending_reason != '')

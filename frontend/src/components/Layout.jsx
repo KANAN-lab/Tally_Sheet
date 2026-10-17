@@ -19,9 +19,9 @@ export default function Layout() {
           <SidebarUser />
         </SheetContent>
       </Sheet>
-      <div className={`transition-[padding] duration-200 ${collapsed ? "lg:pl-20" : "lg:pl-64"}`}>
+      <div className={`transition-[padding] duration-200 ${collapsed ? "lg:pl-20" : "lg:pl-64"} print:pl-0`}>
         <Topbar onMenu={toggle} />
-        <main className="px-4 py-6 sm:px-6 lg:px-8 max-w-[1600px]" data-testid="main-content">
+        <main className="px-4 py-6 sm:px-6 lg:px-8 max-w-[1600px] print:p-0 print:max-w-none" data-testid="main-content">
           <Outlet />
         </main>
       </div>

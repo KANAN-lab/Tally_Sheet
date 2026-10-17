@@ -33,12 +33,14 @@ CREATE TABLE IF NOT EXISTS public.settings (
     hold_categories_json TEXT DEFAULT '[]',
     qa_documents_json TEXT DEFAULT '{}',
     role_permissions_json TEXT DEFAULT '{}',
+    webhook_config_json TEXT DEFAULT '{}',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
     updated_by_name TEXT NOT NULL
 );
 ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS hold_categories_json TEXT DEFAULT '[]';
 ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS qa_documents_json TEXT DEFAULT '{}';
 ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS role_permissions_json TEXT DEFAULT '{}';
+ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS webhook_config_json TEXT DEFAULT '{}';
 
 -- 3. MASTER VERSIONS TABLE
 CREATE TABLE IF NOT EXISTS public.master_versions (
@@ -247,9 +249,15 @@ CREATE TABLE IF NOT EXISTS public.activity_logs (
     details TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
 );
-CREATE INDEX IF NOT EXISTS idx_activity_logs_created ON public.activity_logs(created_at DESC);
+-- 9. MASTER PREVIEWS TABLE (Serverless Staging for Master Data Upload)
+CREATE TABLE IF NOT EXISTS public.master_previews (
+    id TEXT PRIMARY KEY,
+    data_json TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
+);
+CREATE INDEX IF NOT EXISTS idx_master_previews_created ON public.master_previews(created_at DESC);
 
--- 9. ROW LEVEL SECURITY (RLS) POLICIES
+-- 10. ROW LEVEL SECURITY (RLS) POLICIES
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.master_versions ENABLE ROW LEVEL SECURITY;
@@ -259,6 +267,7 @@ ALTER TABLE public.tally_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tally_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.suppliers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.master_previews ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Full access users" ON public.users;
 CREATE POLICY "Full access users" ON public.users FOR ALL USING (true) WITH CHECK (true);
@@ -287,7 +296,10 @@ CREATE POLICY "Full access tally_history" ON public.tally_history FOR ALL USING 
 DROP POLICY IF EXISTS "Full access activity_logs" ON public.activity_logs;
 CREATE POLICY "Full access activity_logs" ON public.activity_logs FOR ALL USING (true) WITH CHECK (true);
 
--- 10. SEED DATA
+DROP POLICY IF EXISTS "Full access master_previews" ON public.master_previews;
+CREATE POLICY "Full access master_previews" ON public.master_previews FOR ALL USING (true) WITH CHECK (true);
+
+-- 11. SEED DATA
 INSERT INTO public.users (id, email, name, password_hash, role, is_pic, active, created_at)
 VALUES ('0957b49d-67b9-437a-8d63-18cc1274def3', 'admin@tally.com', 'Administrator', '4c1e340fbf3c22ca4dd18336c73d8c66b5e57bba40ab2cc90fd071f442dd611b', 'admin', 1, 1, '2026-10-15T04:18:33.504198+00:00')
 ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, password_hash = EXCLUDED.password_hash;
