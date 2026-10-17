@@ -2,14 +2,23 @@
 -- TALLY SHEET - SUPABASE POSTGRESQL SCHEMA & PRODUCTION SETUP
 -- Project URL: https://jooffdovcomgyvvsftmf.supabase.co
 --
+-- STATUS: PRODUCTION LIVE SAFE (100% NON-DESTRUCTIVE)
+-- JAMINAN KEAMANAN DATABASE LIVE:
+-- 1. Script ini 100% AMAN dijalankan di database Supabase yang SUDAH GO-LIVE.
+-- 2. TIDAK ADA perintah destruktif: TIDAK ADA DROP TABLE, DROP SCHEMA, TRUNCATE, atau DELETE.
+-- 3. Semua tabel dibuat dengan klausa `CREATE TABLE IF NOT EXISTS`.
+-- 4. Semua kolom migrasi ditambahkan dengan `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.
+-- 5. Semua indeks dibuat dengan `CREATE INDEX IF NOT EXISTS`.
+-- 6. Seluruh SEED DATA (Users, Settings, Materials) menggunakan `ON CONFLICT DO NOTHING`.
+--    -> Data live di Supabase (user, password, konfigurasi, data transaksi Tally Sheet)
+--       TIDAK AKAN PERNAH DIHAPUS ATAU DITIMPA.
+--
 -- PANDUAN EKSEKUSI DI SUPABASE:
 -- 1. Buka Dashboard Supabase: https://supabase.com/dashboard/project/jooffdovcomgyvvsftmf
 -- 2. Masuk ke menu "SQL Editor" (ikon query di sidebar kiri)
 -- 3. Klik "+ New query"
 -- 4. Salin seluruh isi file ini (Ctrl+A, Ctrl+C), lalu paste ke editor
 -- 5. Klik tombol "Run" (atau Ctrl+Enter)
---
--- Script ini IDEMPOTENT (aman dijalankan berulang kali tanpa merusak data).
 -- ===============================================================
 
 -- 1. USERS TABLE
@@ -299,25 +308,31 @@ CREATE POLICY "Full access activity_logs" ON public.activity_logs FOR ALL USING 
 DROP POLICY IF EXISTS "Full access master_previews" ON public.master_previews;
 CREATE POLICY "Full access master_previews" ON public.master_previews FOR ALL USING (true) WITH CHECK (true);
 
--- 11. SEED DATA
+-- 11. SEED DATA (Aman: Hanya diisi jika database kosong, ON CONFLICT DO NOTHING)
 INSERT INTO public.users (id, email, name, password_hash, role, is_pic, active, created_at)
 VALUES ('0957b49d-67b9-437a-8d63-18cc1274def3', 'admin@tally.com', 'Administrator', '4c1e340fbf3c22ca4dd18336c73d8c66b5e57bba40ab2cc90fd071f442dd611b', 'admin', 1, 1, '2026-10-15T04:18:33.504198+00:00')
-ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, password_hash = EXCLUDED.password_hash;
+ON CONFLICT DO NOTHING;
+
 INSERT INTO public.users (id, email, name, password_hash, role, is_pic, active, created_at)
 VALUES ('663aa1ce-82f6-428f-8f3d-9fe4e135a2b1', 'adeiksanr@gmail.com', 'Ade Iksan Ramdani', '4c1e340fbf3c22ca4dd18336c73d8c66b5e57bba40ab2cc90fd071f442dd611b', 'admin', 1, 1, '2026-10-15T04:18:33.504198+00:00')
-ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, password_hash = EXCLUDED.password_hash;
+ON CONFLICT DO NOTHING;
+
 INSERT INTO public.users (id, email, name, password_hash, role, is_pic, active, created_at)
 VALUES ('9707715a-10b7-498c-94c8-276ab935f5dd', 'azes@tally.com', 'Azes', '4c1e340fbf3c22ca4dd18336c73d8c66b5e57bba40ab2cc90fd071f442dd611b', 'user', 1, 1, '2026-10-15T04:18:33.504198+00:00')
-ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, password_hash = EXCLUDED.password_hash;
+ON CONFLICT DO NOTHING;
+
 INSERT INTO public.users (id, email, name, password_hash, role, is_pic, active, created_at)
 VALUES ('c1111111-1111-4111-8111-111111111111', 'checker@tally.com', 'Budi Checker', '4c1e340fbf3c22ca4dd18336c73d8c66b5e57bba40ab2cc90fd071f442dd611b', 'checker', 1, 1, '2026-10-15T04:18:33.504198+00:00')
-ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, role = EXCLUDED.role;
+ON CONFLICT DO NOTHING;
+
 INSERT INTO public.users (id, email, name, password_hash, role, is_pic, active, created_at)
 VALUES ('q2222222-2222-4222-8222-222222222222', 'qc@tally.com', 'Rina QC Inspector', '4c1e340fbf3c22ca4dd18336c73d8c66b5e57bba40ab2cc90fd071f442dd611b', 'qc', 1, 1, '2026-10-15T04:18:33.504198+00:00')
-ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, role = EXCLUDED.role;
+ON CONFLICT DO NOTHING;
+
 INSERT INTO public.users (id, email, name, password_hash, role, is_pic, active, created_at)
 VALUES ('w3333333-3333-4333-8333-333333333333', 'warehouse@tally.com', 'Hendra Admin WH', '4c1e340fbf3c22ca4dd18336c73d8c66b5e57bba40ab2cc90fd071f442dd611b', 'warehouse_admin', 1, 1, '2026-10-15T04:18:33.504198+00:00')
-ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, role = EXCLUDED.role;
+ON CONFLICT DO NOTHING;
+
 INSERT INTO public.settings (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, role_permissions_json, updated_at, updated_by_name)
 VALUES (
     'global',
@@ -329,17 +344,11 @@ VALUES (
     timezone('utc', now()),
     'Ade Iksan Ramdani'
 )
-ON CONFLICT (id) DO UPDATE SET 
-    required_json = EXCLUDED.required_json,
-    duplicate_rule = EXCLUDED.duplicate_rule,
-    hold_categories_json = EXCLUDED.hold_categories_json,
-    qa_documents_json = EXCLUDED.qa_documents_json,
-    role_permissions_json = COALESCE(NULLIF(public.settings.role_permissions_json, '{}'), EXCLUDED.role_permissions_json),
-    updated_at = EXCLUDED.updated_at,
-    updated_by_name = EXCLUDED.updated_by_name;
+ON CONFLICT DO NOTHING;
+
 INSERT INTO public.master_versions (id, version, filename, mode, uploaded_by, uploaded_by_name, uploaded_at, total_rows, valid_rows, error_rows, inserted, updated, deactivated, active_total)
 VALUES ('1c969d96-3a67-40cc-bf7a-5c02ebda9469', 1, '2515F.XLSX', 'upsert', '0957b49d-67b9-437a-8d63-18cc1274def3', 'Administrator', '2026-10-15T02:55:04.374277+00:00', 1219, 981, 238, 981, 0, 0, 981)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- SEED MATERIALS (981 ITEMS)
 INSERT INTO public.materials (id, code, name, extra_json, active, version_id, created_at, updated_at) VALUES
@@ -1362,4 +1371,4 @@ INSERT INTO public.materials (id, code, name, extra_json, active, version_id, cr
 ('705936a3-cafa-45fd-bffd-d0437424c60e', '60000398', 'CITE -001', '{"Material Type": "ZSFG", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('cdb1e1a0-dd5e-4845-9f19-638f6f3308da', '60000430', 'VITAMIN PREMIX', '{"Material Type": "ZSFG", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00'),
 ('ab2cc741-969d-4398-a7b9-648d9e5fe703', '60000835', 'MIX CHEESE AGED CHEDDAR ~ MIX', '{"Material Type": "ZSFG", "BuN": "KG", "Storage location": "RP01"}', 1, '1c969d96-3a67-40cc-bf7a-5c02ebda9469', '2026-10-15T02:55:04.374277+00:00', '2026-10-15T02:55:04.374277+00:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
