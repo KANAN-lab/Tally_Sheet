@@ -11,6 +11,7 @@ import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { fmtTimeAgo } from "@/lib/format";
 import ChangePasswordDialog from "@/components/ChangePasswordDialog";
+import { initSupabase } from "@/lib/supabase";
 
 function getCategoryMeta(cat) {
   switch (cat) {
@@ -70,6 +71,30 @@ function NotificationCenter() {
   useEffect(() => {
     fetchCount();
   }, [location.pathname, fetchCount]);
+
+  // Supabase Realtime WebSocket Listener (Instant Notification Push)
+  useEffect(() => {
+    let channel = null;
+    initSupabase().then((supabase) => {
+      if (!supabase) return;
+      channel = supabase
+        .channel("realtime:notifications_topbar")
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "notifications" },
+          () => {
+            fetchCount();
+          }
+        )
+        .subscribe();
+    });
+
+    return () => {
+      if (channel) {
+        channel.unsubscribe();
+      }
+    };
+  }, [fetchCount]);
 
   // Ambil list lengkap notifikasi saat popover dibuka
   const handleOpenChange = (isOpen) => {

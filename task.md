@@ -272,9 +272,12 @@ Perancangan dan implementasi mekanisme sinkronisasi data latar belakang tanpa re
   - [x] Jika di server `updated_at` sudah berubah (diedit oleh pengguna lain lebih dulu), tolak update (HTTP 409 Conflict) dan beri peringatan proteksi:
     *"Konflik Pengeditan: Dokumen ini telah diperbarui oleh [Nama Pengguna]. Harap muat ulang dokumen untuk meninjau data terbaru sebelum menyimpan."*
 
-- [ ] **Fase 4: Supabase Realtime Listener (Instant Sub-Detik Dual-Engine - Opsional Saat Direct Client Aktif)**
-  - [ ] Tambahkan subscription WebSocket Supabase channel `postgres_changes` untuk tabel `tally_sheets` spesifik pada ID dokumen aktif.
-  - [ ] Jika WebSocket menerima event `UPDATE`, langsung picu silent fetch tanpa menunggu jeda polling 12 detik.
+- [x] **Fase 4: Supabase Realtime Listener (Instant Sub-Detik Dual-Engine)**
+  - [x] Tambahkan modul `frontend/src/lib/supabase.js` untuk inisialisasi dinamis client Supabase Realtime.
+  - [x] Tambahkan subscription WebSocket Supabase channel `postgres_changes` untuk tabel `tally_sheets` di `TallyDetail.jsx`.
+  - [x] Tambahkan subscription WebSocket Supabase channel `postgres_changes` untuk tabel `notifications` di `Topbar.jsx`.
+  - [x] Tambahkan publikasi realtime aman `tally_sheets` dan `notifications` di `supabase_schema.sql`.
+  - [x] Pasang mekanisme unmount cleanup (`channel.unsubscribe()`) agar tidak menguras kuota koneksi free-tier Supabase.
 
 - [x] **Fase 5: Verifikasi & Uji Simulasi Multi-User Concurrency**
   - [x] Uji endpoint `GET /api/tally-sheets/{id}/version` menghasilkan sidik jari valid dalam < 10ms.

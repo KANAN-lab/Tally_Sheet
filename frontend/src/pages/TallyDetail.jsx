@@ -43,6 +43,7 @@ import { api, downloadExcel, errMsg } from "@/lib/api";
 import { canCancel, canEdit, fmtDate, fmtDateTime, openPrint, openBeritaAcaraPrint } from "@/lib/format";
 import { swalAlert, swalConfirm, swalPromptReason } from "@/lib/swal";
 import { WorkflowService } from "@/services/WorkflowService";
+import { initSupabase } from "@/lib/supabase";
 
 function Stepper({ status }) {
   const steps = WorkflowService.getStages();
@@ -155,7 +156,68 @@ export default function TallyDetail() {
     load();
   }, [load]);
 
-  // Silent Lazy Background Sync: Memantau perubahan status dokumen tanpa reload layar (Flicker-Free)
+  // Engine 1: Supabase Realtime WebSocket Listener (Instant Sub-Detik Push Notification)
+  useEffect(() => {
+    if (!id) return;
+    let channel = null;
+
+    initSupabase().then((supabase) => {
+      if (!supabase) return;
+
+      channel = supabase
+        .channel(`realtime:tally_sheets:${id}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "tally_sheets",
+            filter: `id=eq.${id}`
+          },
+          (payload) => {
+            // Lewati jika sedang mengetik di modal atau dialog aktif
+            if (busy || cancelOpen || baModalOpen || document.querySelector(".swal2-container")) return;
+
+            // Langsung panggil data baru seketika tanpa menunggu timer polling!
+            Promise.all([
+              api.get(`/tally-sheets/${id}`),
+              api.get(`/tally-sheets/${id}/history`)
+            ]).then(([sheetRes, histRes]) => {
+              setSheet(sheetRes.data);
+              setHistory(histRes.data);
+
+              const updatedRow = payload.new || {};
+              const editor = updatedRow.updated_by_name || "Pengguna lain";
+              const statusLabels = {
+                draft: "Draf Fisik",
+                waiting_admin: "Menunggu Admin WH",
+                waiting_qc: "Pemeriksaan QC",
+                admin_hold: "Hold Admin",
+                qc_hold: "Hold QC",
+                completed: "Lulus Mutu (Stock Ter-UU)",
+                cancelled: "Dibatalkan",
+                returned_to_checker: "Revisi Checker"
+              };
+              const targetStatus = statusLabels[updatedRow.status] || updatedRow.status || "Baru";
+              toast.info(
+                `⚡ Dokumen diperbarui oleh ${editor} (Status: ${targetStatus})`,
+                { id: `realtime-sync-${id}`, duration: 4000 }
+              );
+            }).catch(() => {});
+          }
+        )
+        .subscribe();
+    });
+
+    // Cleanup: Wajib unsubscribe saat keluar halaman agar tidak mengonsumsi kuota koneksi
+    return () => {
+      if (channel) {
+        channel.unsubscribe();
+      }
+    };
+  }, [id, busy, cancelOpen, baModalOpen]);
+
+  // Engine 2: Silent Lazy Background Sync Fallback (Ban Serep Polling 12 Detik)
   useEffect(() => {
     if (!id || !sheet) return;
 

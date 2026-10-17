@@ -43,6 +43,7 @@ ALGORITHM = "HS256"
 
 # Supabase Cloud Configuration (Persistent storage across serverless lambdas)
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://jooffdovcomgyvvsftmf.supabase.co").rstrip("/")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impvb2ZmZG92Y29tZ3l2dnNmdG1mIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MjAzMzY4NCwiZXhwIjoyMTA3NjA5Njg0fQ.nq3i0vE-oGJv06i9OGkB8vsTUjVvvmV-1r8FGUOsvk0")
 
 def get_sb_headers():
@@ -1538,6 +1539,15 @@ def mark_all_notifications_read(user: dict = Depends(get_current_user)):
         return {"status": "ok"}
     finally:
         conn.close()
+
+# ----------------- PUBLIC CONFIG (CLIENT-SIDE) -----------------
+@app.get("/api/config/public")
+def get_public_config():
+    """Mengembalikan konfigurasi publik untuk koneksi client-side (Supabase Realtime)."""
+    return {
+        "supabase_url": SUPABASE_URL,
+        "supabase_anon_key": SUPABASE_ANON_KEY
+    }
 
 # ----------------- SETTINGS -----------------
 @app.get("/api/settings")

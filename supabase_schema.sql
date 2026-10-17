@@ -344,11 +344,16 @@ CREATE POLICY "Full access master_previews" ON public.master_previews FOR ALL US
 DROP POLICY IF EXISTS "Full access notifications" ON public.notifications;
 CREATE POLICY "Full access notifications" ON public.notifications FOR ALL USING (true) WITH CHECK (true);
 
--- Enable Supabase Realtime for notifications table (Non-Destructive)
+-- Enable Supabase Realtime for notifications and tally_sheets tables (Non-Destructive)
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
-        ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+        IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'notifications') THEN
+            ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'tally_sheets') THEN
+            ALTER PUBLICATION supabase_realtime ADD TABLE public.tally_sheets;
+        END IF;
     END IF;
 EXCEPTION WHEN OTHERS THEN
     NULL;
