@@ -1053,6 +1053,170 @@ class WebhookService:
             pass
         return DEFAULT_WEBHOOK_CONFIG
 
+    @staticmethod
+    def build_payload(event: str, sheet_data: dict, actor: dict, notes: str = "", extra: dict = None, delivery_id: str = None, now_iso: str = None) -> dict:
+        extra = extra or {}
+        sheet_data = sheet_data or {}
+        actor = actor or {}
+        delivery_id = delivery_id or str(uuid.uuid4())
+        now_iso = now_iso or datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        event_meta = {
+            "tally.submitted": ("📥 Penyerahan Draf ke Admin WH", "Checker telah menyelesaikan pemeriksaan fisik dan menyerahkan dokumen ke Admin Warehouse.", "Accent"),
+            "tally.verified_to_qc": ("🔍 Verifikasi Admin WH & Teruskan ke QC", "Admin Warehouse memvalidasi dokumen dan mengajukan uji mutu ke Tim QC.", "Accent"),
+            "tally.held": ("⚠️ Dokumen Ditahan (Hold Operasional)", "Dokumen ditahan karena kendala fisik, selisih kuantiti, atau administrasi surat jalan.", "Attention"),
+            "tally.unheld": ("✅ Status Penahanan Dicabut (Un-Hold)", "Status penahanan berhasil diselesaikan dengan melampirkan catatan tindakan korektif.", "Good"),
+            "tally.approved_stock_uu": ("🎉 Lulus Uji Mutu (Stock Ter-UU / Closed)", "Tim QC meluluskan mutu kedatangan & dokumen resmi diakui di sistem stok pabrik.", "Good"),
+            "tally.rejected": ("❌ Penolakan Mutu Kedatangan (QC Reject)", "Tim QC menolak mutu barang kedatangan berdasarkan uji fisik / laboratorium.", "Attention"),
+            "tally.cancelled": ("🚫 Dokumen Dibatalkan (Cancelled)", "Dokumen tally sheet resmi dibatalkan oleh Super Admin.", "Default"),
+            "tally.test_ping": ("🔔 Uji Coba Integrasi Webhook Berhasil", "Ping uji coba integrasi real-time dari Material Tally Hub (Plant 2111 Cibitung).", "Accent")
+        }
+
+        title, subtitle, color_code = event_meta.get(event, ("📢 Notifikasi Transisi Dokumen", "Pemberitahuan perubahan status dokumen tally sheet.", "Accent"))
+
+        sheet_id = str(sheet_data.get("id") or sheet_data.get("sheet_id") or "")
+        doc_no = str(sheet_data.get("doc_no") or "")
+        po_no = str(sheet_data.get("po_no") or "")
+        delivery_note_no = str(sheet_data.get("delivery_note_no") or "")
+        vendor_name = str(sheet_data.get("supplier_name") or sheet_data.get("vendor_name") or "")
+        truck_plate = str(sheet_data.get("truck_plate") or "")
+        arrival_date = str(sheet_data.get("arrival_date") or "")
+        status = str(sheet_data.get("status") or "")
+        pending_category = str(sheet_data.get("pending_category") or "")
+        action_notes = notes or str(sheet_data.get("action_notes") or sheet_data.get("pending_reason") or "")
+        actor_name = str(actor.get("name") or "System")
+        actor_role = str(actor.get("role") or "system")
+
+        facts = []
+        if doc_no:
+            facts.append({"title": "No Dokumen:", "value": doc_no})
+        if delivery_note_no:
+            facts.append({"title": "No Surat Jalan:", "value": delivery_note_no})
+        if po_no:
+            facts.append({"title": "No Purchase Order:", "value": po_no})
+        if vendor_name:
+            facts.append({"title": "Vendor / Supplier:", "value": vendor_name})
+        if truck_plate:
+            facts.append({"title": "No Polisi Truk:", "value": truck_plate})
+        if arrival_date:
+            facts.append({"title": "Tanggal Kedatangan:", "value": arrival_date})
+        if status:
+            facts.append({"title": "Status Dokumen:", "value": status.replace("_", " ").title()})
+        facts.append({"title": "Aktor / Eksekutor:", "value": f"{actor_name} ({actor_role})"})
+
+        if pending_category:
+            facts.append({"title": "Kategori Hold:", "value": pending_category})
+        if action_notes:
+            facts.append({"title": "Catatan / Alasan:", "value": action_notes})
+
+        if event == "tally.test_ping":
+            facts = [
+                {"title": "Sistem Sumber:", "value": "Material Tally Hub (Plant 2111 Cibitung)"},
+                {"title": "Status Koneksi:", "value": "Terhubung (Active / Connected)"},
+                {"title": "Penguji:", "value": f"{actor_name} ({actor_role})"},
+                {"title": "Waktu Pengujian:", "value": now_iso},
+                {"title": "Pesan:", "value": "Integrasi Microsoft Teams Adaptive Card berfungsi optimal."}
+            ]
+
+        card_body = [
+            {
+                "type": "Container",
+                "style": "emphasis",
+                "items": [
+                    {
+                        "type": "TextBlock",
+                        "text": "🏢 DIAMOND COLD STORAGE — PLANT 2111",
+                        "size": "Small",
+                        "weight": "Bolder",
+                        "color": "Accent"
+                    },
+                    {
+                        "type": "TextBlock",
+                        "text": title,
+                        "size": "Medium",
+                        "weight": "Bolder",
+                        "color": color_code,
+                        "wrap": True
+                    },
+                    {
+                        "type": "TextBlock",
+                        "text": subtitle,
+                        "size": "Small",
+                        "isSubtle": True,
+                        "wrap": True
+                    }
+                ]
+            },
+            {
+                "type": "FactSet",
+                "facts": facts
+            }
+        ]
+
+        actions = []
+        if sheet_id:
+            actions.append({
+                "type": "Action.OpenUrl",
+                "title": "📄 Buka Dokumen di Tally Hub",
+                "url": f"https://tally-incoming.vercel.app/tally/{sheet_id}"
+            })
+        elif event == "tally.test_ping":
+            actions.append({
+                "type": "Action.OpenUrl",
+                "title": "⚙️ Buka Pengaturan Webhook",
+                "url": "https://tally-incoming.vercel.app/settings"
+            })
+
+        adaptive_card = {
+            "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+            "type": "AdaptiveCard",
+            "version": "1.4",
+            "msteams": {
+                "width": "Full"
+            },
+            "body": card_body
+        }
+        if actions:
+            adaptive_card["actions"] = actions
+
+        summary_text = f"[{title}] {doc_no or 'Uji Coba'} - {vendor_name or 'Tally Hub'} oleh {actor_name}"
+
+        return {
+            "event": event,
+            "delivery_id": delivery_id,
+            "timestamp": now_iso,
+            "actor": {
+                "id": actor.get("id", ""),
+                "name": actor_name,
+                "role": actor_role
+            },
+            "data": {
+                "sheet_id": sheet_id,
+                "doc_no": doc_no,
+                "delivery_note_no": delivery_note_no,
+                "po_no": po_no,
+                "arrival_date": arrival_date,
+                "truck_plate": truck_plate,
+                "vendor_name": vendor_name,
+                "status": status,
+                "previous_status": extra.get("previous_status", ""),
+                "pending_category": pending_category,
+                "pending_reason": sheet_data.get("pending_reason", ""),
+                "has_berita_acara": bool(sheet_data.get("has_berita_acara")),
+                "action_notes": action_notes,
+                **extra
+            },
+            "text": summary_text,
+            "content": summary_text,
+            "type": "message",
+            "attachments": [
+                {
+                    "contentType": "application/vnd.microsoft.card.adaptive",
+                    "content": adaptive_card
+                }
+            ]
+        }
+
     @classmethod
     def dispatch(cls, event: str, sheet_data: dict, actor: dict, notes: str = "", extra: dict = None):
         """
@@ -1076,32 +1240,15 @@ class WebhookService:
                 now_iso = now_dt.isoformat()
                 now_ts = int(now_dt.timestamp())
 
-                payload = {
-                    "event": event,
-                    "delivery_id": delivery_id,
-                    "timestamp": now_iso,
-                    "actor": {
-                        "id": actor.get("id", ""),
-                        "name": actor.get("name", "System"),
-                        "role": actor.get("role", "system")
-                    },
-                    "data": {
-                        "sheet_id": sheet_data.get("id") or sheet_data.get("sheet_id") or "",
-                        "doc_no": sheet_data.get("doc_no") or "",
-                        "delivery_note_no": sheet_data.get("delivery_note_no") or "",
-                        "po_no": sheet_data.get("po_no") or "",
-                        "arrival_date": sheet_data.get("arrival_date") or "",
-                        "truck_plate": sheet_data.get("truck_plate") or "",
-                        "vendor_name": sheet_data.get("supplier_name") or "",
-                        "status": sheet_data.get("status") or "",
-                        "previous_status": (extra or {}).get("previous_status") or "",
-                        "pending_category": sheet_data.get("pending_category") or "",
-                        "pending_reason": sheet_data.get("pending_reason") or "",
-                        "has_berita_acara": bool(sheet_data.get("has_berita_acara")),
-                        "action_notes": notes or "",
-                        **(extra or {})
-                    }
-                }
+                payload = cls.build_payload(
+                    event=event,
+                    sheet_data=sheet_data,
+                    actor=actor,
+                    notes=notes,
+                    extra=extra,
+                    delivery_id=delivery_id,
+                    now_iso=now_iso
+                )
 
                 payload_bytes = json.dumps(payload, separators=(',', ':')).encode("utf-8")
                 target_url = cfg["url"].strip()
@@ -1118,7 +1265,7 @@ class WebhookService:
                     sig = hmac.new(secret.encode("utf-8"), payload_bytes, hashlib.sha256).hexdigest()
                     headers["X-Tally-Signature"] = f"sha256={sig}"
 
-                requests.post(target_url, data=payload_bytes, headers=headers, timeout=4)
+                requests.post(target_url, data=payload_bytes, headers=headers, timeout=5)
             except Exception as e:
                 print(f"Notice: Webhook dispatch error ({event}):", e)
 
@@ -1482,21 +1629,17 @@ def test_webhook(req: TestWebhookRequest, admin: dict = Depends(require_admin)):
     now_iso = now_dt.isoformat()
     now_ts = int(now_dt.timestamp())
 
-    payload = {
-        "event": "tally.test_ping",
-        "delivery_id": delivery_id,
-        "timestamp": now_iso,
-        "actor": {
-            "id": admin["id"],
-            "name": admin["name"],
-            "role": admin["role"]
+    payload = WebhookService.build_payload(
+        event="tally.test_ping",
+        sheet_data={
+            "doc_no": "TEST-PING",
+            "message": "Ping uji coba integrasi Webhook dari Material Tally Hub (Plant 2111 Cibitung)"
         },
-        "data": {
-            "message": "Ping uji coba integrasi Webhook dari Material Tally Hub (Plant 2111 Cibitung)",
-            "test_mode": True,
-            "status": "connected"
-        }
-    }
+        actor=admin,
+        notes="Pengujian integrasi endpoint dari UI Pengaturan Sistem",
+        delivery_id=delivery_id,
+        now_iso=now_iso
+    )
     payload_bytes = json.dumps(payload, separators=(',', ':')).encode("utf-8")
     headers = {
         "Content-Type": "application/json",
