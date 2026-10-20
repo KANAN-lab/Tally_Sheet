@@ -11,7 +11,7 @@ export const ROLE_LABELS = {
  * Alur Bisnis Proses: Checker -> Admin Warehouse -> Quality Control (Stock Ter-UU)
  */
 export class WorkflowService {
-  static STAGES = [
+  static STAGES_3 = [
     {
       id: "checker",
       label: "1. Checker",
@@ -32,15 +32,35 @@ export class WorkflowService {
     }
   ];
 
-  static getStages() {
-    return this.STAGES;
+  static STAGES_2 = [
+    {
+      id: "checker",
+      label: "1. Checker",
+      desc: "Hitung Fisik & Input SJ/PO",
+      role: "checker"
+    },
+    {
+      id: "admin",
+      label: "2. Admin Warehouse",
+      desc: "Verifikasi Dokumen & Selesai (Stock Ter-UU)",
+      role: "warehouse_admin"
+    }
+  ];
+
+  static getStages(qcEnabled = true) {
+    return qcEnabled ? this.STAGES_3 : this.STAGES_2;
   }
 
-  static getActiveStageIndex(status) {
+  static getActiveStageIndex(status, qcEnabled = true) {
     if (!status || status === "draft") return 0;
-    if (status === "waiting_admin" || status === "waiting_admin_1" || status === "admin_hold") return 1;
-    if (status === "waiting_qc" || status === "qc_hold" || status === "qc_rejected") return 2;
-    if (status === "completed") return 3; // All stages done
+    if (status === "waiting_admin" || status === "waiting_admin_1" || status === "admin_hold" || status === "gr_done") return 1;
+    if (qcEnabled) {
+      if (status === "waiting_qc" || status === "qc_hold" || status === "qc_rejected") return 2;
+      if (status === "completed") return 3; // All 3 stages done
+    } else {
+      if (status === "completed") return 2; // All 2 stages done
+      if (status === "waiting_qc" || status === "qc_hold") return 1; // Fallback for in-flight legacy docs
+    }
     return 0;
   }
 
@@ -56,14 +76,18 @@ export class WorkflowService {
     return status === "admin_hold" || status === "qc_hold";
   }
 
+  static isGrDone(status) {
+    return status === "gr_done";
+  }
+
   static isReject(status) {
     return status === "qc_rejected";
   }
 
   /**
-   * Determine available action triggers based on current status and user role / dynamic permissions
+   * Determine available action triggers based on current status, user role / dynamic permissions, and qcEnabled setting
    */
-  static getAvailableActions(status, userOrRole) {
+  static getAvailableActions(status, userOrRole, qcEnabled = true) {
     const role = typeof userOrRole === "string" ? userOrRole : (userOrRole?.role || "user");
     const perms = typeof userOrRole === "object" ? userOrRole?.permissions : null;
 
@@ -93,7 +117,66 @@ export class WorkflowService {
 
     // Stage 2: Admin Warehouse Verification
     if (status === "waiting_admin" || status === "waiting_admin_1" || status === "admin_hold") {
+      if (qcEnabled) {
+        if (isSuper || can("admin_verify", isAdmin)) {
+          actions.push({
+            id: "send_to_qc",
+            label: "Teruskan ke QC (Request Sampling)",
+            variant: "purple",
+            icon: "ShieldCheck"
+          });
+        }
+      } else {
+        // Alur Cepat 2-Tahap: Admin langsung approve ke Stock Ter-UU
+        if (isSuper || can("admin_verify", isAdmin)) {
+          actions.push({
+            id: "admin_approve",
+            label: "Selesaikan Dokumen & Stock Ter-UU",
+            variant: "emerald",
+            icon: "CheckCircle2"
+          });
+        }
+      }
+
+      // Opsi A: Posting GR SAP (Status berubah ke gr_done / Pending UU menunggu COA)
       if (isSuper || can("admin_verify", isAdmin)) {
+        actions.push({
+          id: "post_gr_pending",
+          label: "Posting GR SAP (Pending UU)",
+          variant: "indigo",
+          icon: "FileCheck"
+        });
+      }
+
+      if (isSuper || can("admin_hold", isAdmin)) {
+        actions.push({
+          id: "admin_hold",
+          label: "Tahan Dokumen (Hold Admin)",
+          variant: "amber",
+          icon: "Clock"
+        });
+      }
+      if (isSuper || can("return_to_checker", isAdmin)) {
+        actions.push({
+          id: "return_to_checker",
+          label: "Kembalikan ke Checker (Revisi)",
+          variant: "outline",
+          icon: "RotateCcw"
+        });
+      }
+    }
+
+    // Opsi A: Status Sudah di-GR (Pending UU - Menunggu Kelengkapan COA)
+    if (status === "gr_done") {
+      if (isSuper || can("admin_verify", isAdmin) || can("qc_approve", isQC)) {
+        actions.push({
+          id: "release_to_uu",
+          label: "Rilis ke Stock Ter-UU (COA Lengkap)",
+          variant: "emerald",
+          icon: "CheckCircle2"
+        });
+      }
+      if (qcEnabled && (isSuper || can("admin_verify", isAdmin))) {
         actions.push({
           id: "send_to_qc",
           label: "Teruskan ke QC (Request Sampling)",
@@ -119,8 +202,16 @@ export class WorkflowService {
       }
     }
 
-    // Stage 3: QC Inspection (Approve langsung Stock Ter-UU, tanpa input COA)
+    // Stage 3: QC Inspection (Approve langsung Stock Ter-UU) ATAU In-Flight Fallback jika QC dinonaktifkan
     if (status === "waiting_qc" || status === "qc_hold") {
+      if (!qcEnabled && (isSuper || isAdmin)) {
+        actions.push({
+          id: "admin_approve",
+          label: "Selesaikan Dokumen (Bypass QC)",
+          variant: "emerald",
+          icon: "CheckCircle2"
+        });
+      }
       if (isSuper || can("qc_approve", isQC)) {
         actions.push({
           id: "qc_approve",

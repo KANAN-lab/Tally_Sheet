@@ -277,6 +277,7 @@ DEFAULT_WEBHOOK_CONFIG = {
         "tally.verified_to_qc",
         "tally.held",
         "tally.unheld",
+        "tally.gr_posted",
         "tally.approved_stock_uu",
         "tally.rejected",
         "tally.cancelled"
@@ -288,11 +289,21 @@ class SettingsService:
     """Manages application-wide settings with dynamic configuration."""
     
     @staticmethod
+    def get_workflow_stages(qc_enabled: bool = True) -> List[Dict[str, Any]]:
+        if not qc_enabled:
+            return [
+                {"id": "checker", "name": "1. Checker", "role": "checker", "desc": "Hitung Fisik & Input SJ/PO"},
+                {"id": "admin", "name": "2. Admin Warehouse", "role": "warehouse_admin", "desc": "Verifikasi Dokumen & Selesai (Stock Ter-UU)"}
+            ]
+        return DEFAULT_WORKFLOW_STAGES
+
+    @staticmethod
     def get_settings(conn) -> Dict[str, Any]:
         row = conn.execute("SELECT * FROM settings WHERE id = 'global'").fetchone()
         if not row:
             return {
                 "id": "global",
+                "qc_enabled": True,
                 "required": {
                     "batch_fisik": True,
                     "supplier_batch": True,
@@ -313,6 +324,10 @@ class SettingsService:
         req = json.loads(row["required_json"]) if row["required_json"] else {}
         dup = row["duplicate_rule"] or "within_document"
         
+        qc_enabled = True
+        if "qc_enabled" in row.keys() and row["qc_enabled"] is not None:
+            qc_enabled = bool(row["qc_enabled"])
+
         # Load dynamic hold categories
         categories = DEFAULT_HOLD_CATEGORIES
         if "hold_categories_json" in row.keys() and row["hold_categories_json"]:
@@ -348,10 +363,11 @@ class SettingsService:
                 
         return {
             "id": "global",
+            "qc_enabled": qc_enabled,
             "required": req,
             "duplicate_rule": dup,
             "hold_categories": categories,
-            "workflow_stages": DEFAULT_WORKFLOW_STAGES,
+            "workflow_stages": SettingsService.get_workflow_stages(qc_enabled),
             "qa_documents": qa_docs,
             "role_permissions": role_perms,
             "webhook_config": webhook_cfg,
@@ -360,7 +376,7 @@ class SettingsService:
         }
 
     @staticmethod
-    def update_settings(conn, required: Dict[str, bool], duplicate_rule: str, hold_categories: List[str], admin_name: str, qa_documents: Optional[Dict[str, Any]] = None, webhook_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def update_settings(conn, required: Dict[str, bool], duplicate_rule: str, hold_categories: List[str], admin_name: str, qa_documents: Optional[Dict[str, Any]] = None, webhook_config: Optional[Dict[str, Any]] = None, qc_enabled: Optional[bool] = None) -> Dict[str, Any]:
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         cats = [c.strip() for c in hold_categories if c and c.strip()]
         if not cats:
@@ -368,32 +384,39 @@ class SettingsService:
 
         qa_docs_to_save = {**DEFAULT_QA_DOCUMENTS, **(qa_documents or {})}
 
-        # Preserve existing permissions & webhook config
+        # Preserve existing permissions, webhook config, & qc_enabled
         existing_row = conn.execute("SELECT * FROM settings WHERE id = 'global'").fetchone()
         existing_perms_json = json.dumps(DEFAULT_ROLE_PERMISSIONS)
         existing_wh_json = json.dumps(DEFAULT_WEBHOOK_CONFIG)
+        existing_qc_enabled = 1
 
         if existing_row:
             if "role_permissions_json" in existing_row.keys() and existing_row["role_permissions_json"]:
                 existing_perms_json = existing_row["role_permissions_json"]
             if "webhook_config_json" in existing_row.keys() and existing_row["webhook_config_json"]:
                 existing_wh_json = existing_row["webhook_config_json"]
+            if "qc_enabled" in existing_row.keys() and existing_row["qc_enabled"] is not None:
+                existing_qc_enabled = 1 if bool(existing_row["qc_enabled"]) else 0
 
         if webhook_config is not None:
             existing_wh_json = json.dumps({**DEFAULT_WEBHOOK_CONFIG, **webhook_config})
 
+        final_qc_enabled = (1 if qc_enabled else 0) if qc_enabled is not None else existing_qc_enabled
+
         conn.execute("""
             INSERT OR REPLACE INTO settings 
-            (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, role_permissions_json, webhook_config_json, updated_at, updated_by_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, ("global", json.dumps(required), duplicate_rule, json.dumps(cats), json.dumps(qa_docs_to_save), existing_perms_json, existing_wh_json, now, admin_name))
+            (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, role_permissions_json, webhook_config_json, qc_enabled, updated_at, updated_by_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("global", json.dumps(required), duplicate_rule, json.dumps(cats), json.dumps(qa_docs_to_save), existing_perms_json, existing_wh_json, final_qc_enabled, now, admin_name))
         
+        is_qc_on = bool(final_qc_enabled)
         return {
             "id": "global",
+            "qc_enabled": is_qc_on,
             "required": required,
             "duplicate_rule": duplicate_rule,
             "hold_categories": cats,
-            "workflow_stages": DEFAULT_WORKFLOW_STAGES,
+            "workflow_stages": SettingsService.get_workflow_stages(is_qc_on),
             "qa_documents": qa_docs_to_save,
             "role_permissions": json.loads(existing_perms_json),
             "webhook_config": json.loads(existing_wh_json),
@@ -468,6 +491,9 @@ class WorkflowManager:
     ALLOWED_ACTIONS = {
         "submit_to_admin",
         "admin_hold",
+        "post_gr_pending",
+        "release_to_uu",
+        "admin_approve",
         "send_to_qc",
         "qc_hold",
         "qc_approve",
@@ -505,6 +531,11 @@ class WorkflowManager:
         qc_nts = sheet.get("qc_notes") or ""
         qc_by = sheet.get("qc_by_name") or ""
         qc_at = sheet.get("qc_at") or None
+        gr_no_val = sheet.get("gr_no") or ""
+        gr_by_name_val = sheet.get("gr_by_name") or ""
+        gr_by_id_val = sheet.get("gr_by_id") or ""
+        gr_at_val = sheet.get("gr_at") or None
+        gr_notes_val = sheet.get("gr_notes") or ""
         finalized_at = sheet.get("finalized_at")
         finalized_by = sheet.get("finalized_by")
         finalized_by_name = sheet.get("finalized_by_name")
@@ -522,10 +553,10 @@ class WorkflowManager:
             new_handler_role = "warehouse_admin"
             log_detail = f"Checker ({user['name']}) menyerahkan dokumen kedatangan ke Admin Warehouse"
 
-        # 2. ACTION: admin_hold (Admin menahan dokumen)
+        # 2. ACTION: admin_hold (Admin menahan dokumen sebelum posting GR)
         elif action == "admin_hold":
-            if status not in ("waiting_admin", "waiting_admin_1"):
-                raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat ditahan Admin. Dokumen harus dalam status Menunggu Verifikasi Admin.")
+            if status not in ("waiting_admin", "waiting_admin_1", "gr_done"):
+                raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat ditahan Admin. Dokumen harus dalam status Menunggu Verifikasi Admin atau Sudah GR.")
             if not PermissionService.has_permission(conn, user_role, "admin_hold"):
                 raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user_role}' tidak memiliki izin 'admin_hold' untuk menahan dokumen.")
             if not reason:
@@ -536,17 +567,93 @@ class WorkflowManager:
             pending_rsn = reason
             log_detail = f"Admin Warehouse menahan dokumen: [{pending_cat}] {pending_rsn}"
 
+        # ACTION: post_gr_pending (Admin Warehouse memposting GR SAP, status berubah ke gr_done / Pending UU)
+        elif action == "post_gr_pending":
+            if status not in ("waiting_admin", "waiting_admin_1", "admin_hold"):
+                raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat diposting GR.")
+            if not (PermissionService.has_permission(conn, user_role, "admin_verify") or user_role in ("admin", "warehouse_admin")):
+                raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user_role}' tidak memiliki izin untuk memposting GR.")
+            gr_number = (payload.get("gr_no") or "").strip()
+            if not gr_number:
+                raise HTTPException(status_code=400, detail="Nomor Dokumen GR SAP (Goods Receipt / MIGO) wajib diisi.")
+            gr_reason = reason or "Menunggu lembar COA asli supplier / kelengkapan dokumen pendukung"
+            new_status = "gr_done"
+            new_handler_role = "warehouse_admin"
+            pending_cat = category or "Menunggu COA / Dokumen Pendukung"
+            pending_rsn = gr_reason
+            gr_no_val = gr_number
+            gr_by_name_val = user["name"]
+            gr_by_id_val = user["id"]
+            gr_at_val = now
+            gr_notes_val = gr_reason
+            log_detail = f"Admin Warehouse ({user['name']}) memposting GR SAP #{gr_number} (Status: Sudah di-GR / Pending UU). Catatan: {gr_reason}"
+
+        # ACTION: release_to_uu (Pelepasan stok dari GR Karantina ke Stock Ter-UU)
+        elif action == "release_to_uu":
+            if status not in ("gr_done", "admin_hold", "qc_hold"):
+                raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat dilepas Ter-UU.")
+            if not (PermissionService.has_permission(conn, user_role, "admin_verify") or user_role in ("admin", "warehouse_admin", "qc")):
+                raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user_role}' tidak memiliki izin untuk rilis Stock Ter-UU.")
+            new_status = "completed"
+            new_handler_role = "closed"
+            qc_stat = "passed"
+            finalized_at = now
+            finalized_by = user["id"]
+            finalized_by_name = user["name"]
+            pending_cat = ""
+            pending_rsn = ""
+            resolution = reason or "Dokumen COA telah lengkap & valid (Stok resmi dilepas Ter-UU)"
+            qc_nts = resolution
+            qc_by = user["name"]
+            qc_at = now
+            log_detail = f"Admin Warehouse ({user['name']}) melepaskan status hold UU ➔ Dokumen Selesai (Stock Ter-UU): {resolution}"
+
+        # ACTION: admin_approve (Admin Warehouse langsung menyelesaikan dokumen -> SELESAI / STOCK TER-UU saat QC dinonaktifkan)
+        elif action == "admin_approve":
+            if status not in ("waiting_admin", "waiting_admin_1", "admin_hold", "waiting_qc", "qc_hold", "gr_done"):
+                raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat diselesaikan Admin.")
+            if not (PermissionService.has_permission(conn, user_role, "admin_verify") or user_role in ("admin", "warehouse_admin")):
+                raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user_role}' tidak memiliki izin untuk menyelesaikan dokumen.")
+            new_status = "completed"
+            new_handler_role = "closed"
+            qc_stat = "passed"
+            if payload.get("gr_no"):
+                gr_no_val = (payload.get("gr_no") or "").strip()
+                gr_by_name_val = user["name"]
+                gr_by_id_val = user["id"]
+                gr_at_val = now
+                if payload.get("gr_notes") or reason:
+                    gr_notes_val = (payload.get("gr_notes") or reason or "").strip()
+            if old_status in ("admin_hold", "qc_hold", "gr_done"):
+                resolution = reason or "Verifikasi fisik & dokumen telah diselesaikan (Hold Dicabut & Stock Ter-UU)"
+                qc_nts = f"Selesai (Stock Ter-UU) setelah Hold. Resolusi: {resolution}"
+                log_detail = f"Admin Warehouse ({user['name']}) melepaskan Hold & menyelesaikan dokumen (Stock Ter-UU): {resolution}"
+            else:
+                resolution = reason or "Verifikasi fisik & dokumen sesuai standar (Stock Ter-UU oleh Admin Warehouse)"
+                qc_nts = resolution
+                log_detail = f"Admin Warehouse ({user['name']}) memvalidasi & menyelesaikan dokumen (Stock Ter-UU)"
+            qc_by = user["name"]
+            qc_at = now
+            finalized_at = now
+            finalized_by = user["id"]
+            finalized_by_name = user["name"]
+            pending_cat = ""
+            pending_rsn = ""
+
         # 3. ACTION: send_to_qc (Admin meneruskan ke QC)
         elif action == "send_to_qc":
-            if status not in ("waiting_admin", "waiting_admin_1", "admin_hold"):
-                raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat diteruskan ke QC. Dokumen harus dalam status Menunggu Verifikasi Admin.")
+            set_row = conn.execute("SELECT * FROM settings WHERE id = 'global'").fetchone()
+            if set_row and "qc_enabled" in set_row.keys() and set_row["qc_enabled"] is not None and not bool(set_row["qc_enabled"]):
+                raise HTTPException(status_code=400, detail="Tahapan QC sedang dinonaktifkan di Pengaturan Sistem. Admin Warehouse dapat langsung menyelesaikan dokumen (Stock Ter-UU).")
+            if status not in ("waiting_admin", "waiting_admin_1", "admin_hold", "gr_done"):
+                raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat diteruskan ke QC. Dokumen harus dalam status Menunggu Verifikasi Admin atau Sudah GR.")
             if not PermissionService.has_permission(conn, user_role, "admin_verify"):
                 raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user_role}' tidak memiliki izin 'admin_verify' untuk memverifikasi dokumen ke QC.")
             new_status = "waiting_qc"
             new_handler_role = "qc"
-            if old_status == "admin_hold":
-                resolution = reason or "Verifikasi fisik & dokumen telah selesai diselesaikan"
-                log_detail = f"Admin Warehouse ({user['name']}) melepaskan Hold Admin & meneruskan ke QC. Tindakan Korektif: {resolution}"
+            if old_status in ("admin_hold", "gr_done"):
+                resolution = reason or "Verifikasi fisik telah diselesaikan & diteruskan ke QC"
+                log_detail = f"Admin Warehouse ({user['name']}) meneruskan ke QC. Tindakan Korektif: {resolution}"
                 pending_cat = ""
                 pending_rsn = ""
             else:
@@ -554,7 +661,7 @@ class WorkflowManager:
 
         # 4. ACTION: return_to_checker (Admin mengembalikan ke Checker untuk revisi fisik)
         elif action == "return_to_checker":
-            if status not in ("waiting_admin", "waiting_admin_1", "admin_hold"):
+            if status not in ("waiting_admin", "waiting_admin_1", "admin_hold", "gr_done"):
                 raise HTTPException(status_code=400, detail=f"Dokumen berstatus '{status}' tidak dapat dikembalikan ke Checker.")
             if not PermissionService.has_permission(conn, user_role, "return_to_checker"):
                 raise HTTPException(status_code=403, detail=f"Akses ditolak. Role '{user_role}' tidak memiliki izin 'return_to_checker' untuk mengembalikan dokumen ke Checker.")
@@ -629,6 +736,7 @@ class WorkflowManager:
             SET status = ?, current_handler_role = ?, current_handler_name = ?,
                 pending_category = ?, pending_reason = ?,
                 qc_status = ?, qc_notes = ?, qc_by_name = ?, qc_at = ?,
+                gr_no = ?, gr_by_name = ?, gr_by_id = ?, gr_at = ?, gr_notes = ?,
                 finalized_at = ?, finalized_by = ?, finalized_by_name = ?,
                 updated_at = ?, updated_by = ?, updated_by_name = ?
             WHERE id = ?
@@ -636,6 +744,7 @@ class WorkflowManager:
             new_status, new_handler_role, new_handler_name,
             pending_cat, pending_rsn,
             qc_stat, qc_nts, qc_by, qc_at,
+            gr_no_val, gr_by_name_val, gr_by_id_val, gr_at_val, gr_notes_val,
             finalized_at, finalized_by, finalized_by_name,
             now, user["id"], user["name"],
             actual_id
@@ -666,6 +775,11 @@ class WorkflowManager:
             "qc_notes": qc_nts,
             "qc_by_name": qc_by,
             "qc_at": qc_at,
+            "gr_no": gr_no_val,
+            "gr_by_name": gr_by_name_val,
+            "gr_by_id": gr_by_id_val,
+            "gr_at": gr_at_val,
+            "gr_notes": gr_notes_val,
             "finalized_at": finalized_at,
             "finalized_by": finalized_by,
             "finalized_by_name": finalized_by_name,

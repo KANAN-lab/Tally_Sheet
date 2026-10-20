@@ -193,6 +193,7 @@ export default function Settings() {
     setBusy(true);
     try {
       const payload = {
+        qc_enabled: s.qc_enabled !== false,
         required: s.required,
         duplicate_rule: s.duplicate_rule,
         hold_categories: s.hold_categories || [],
@@ -201,7 +202,7 @@ export default function Settings() {
       };
       const r = await api.put("/settings", payload);
       setS(r.data);
-      swalAlert("Pengaturan Tersimpan", "Seluruh konfigurasi validasi, kategori kendala, Nomor Dokumen QA, dan Webhook berhasil diperbarui.", "success");
+      swalAlert("Pengaturan Tersimpan", "Seluruh konfigurasi alur kerja QC, validasi, kategori kendala, Nomor Dokumen QA, dan Webhook berhasil diperbarui.", "success");
     } catch (e) {
       toast.error(errMsg(e));
     } finally {
@@ -216,7 +217,7 @@ export default function Settings() {
         subtitle={
           s.updated_at
             ? `Terakhir diperbarui pada ${fmtDateTime(s.updated_at)} oleh ${s.updated_by_name}`
-            : "Konfigurasi aturan validasi, penanganan duplikasi, dan kategori kendala operasional secara dinamis."
+            : "Konfigurasi aturan validasi, penanganan duplikasi, alur kerja QC, dan kategori kendala operasional secara dinamis."
         }
         actions={
           <Button
@@ -231,6 +232,50 @@ export default function Settings() {
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* Workflow Configuration: QC Toggle */}
+        <div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4" data-testid="settings-workflow-card">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+            <div>
+              <h2 className="font-display text-base font-bold text-[#0B2149] flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-emerald-600" /> Tahapan Alur Kerja & Kontrol Mutu (QC)
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Konfigurasikan apakah dokumen kedatangan membutuhkan verifikasi & uji mutu Tim QC atau dapat langsung diselesaikan oleh Admin Warehouse.
+              </p>
+            </div>
+            <span className={`rounded-full px-3 py-1 text-xs font-bold ${
+              s.qc_enabled !== false
+                ? "bg-purple-100 text-purple-900 border border-purple-200"
+                : "bg-emerald-100 text-emerald-900 border border-emerald-200"
+            }`}>
+              {s.qc_enabled !== false ? "Mode 3-Tahap (QC Aktif)" : "Mode Cepat 2-Tahap (Bypass QC)"}
+            </span>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+            <div className="space-y-1">
+              <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                <span>Aktifkan Tahap Pemeriksaan Quality Control (QC)</span>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed max-w-2xl">
+                {s.qc_enabled !== false
+                  ? "Alur Standar: Checker ➔ Admin Warehouse ➔ Quality Control (Stock Ter-UU). Dokumen wajib diperiksa Tim QC sebelum status resmi diselesaikan."
+                  : "Alur Cepat (Bypass QC): Dokumen cukup diverifikasi oleh Admin Warehouse dan langsung dapat diselesaikan ke status Selesai / Stock Ter-UU. Tugas QC dinonaktifkan tanpa menghapus modul maupun role QC."}
+              </p>
+            </div>
+            <div className="flex items-center gap-2.5 shrink-0">
+              <span className="text-xs font-semibold text-slate-600">
+                {s.qc_enabled !== false ? "QC Aktif" : "QC Nonaktif"}
+              </span>
+              <Switch
+                checked={s.qc_enabled !== false}
+                onCheckedChange={(v) => setS({ ...s, qc_enabled: v })}
+                data-testid="settings-qc-toggle"
+              />
+            </div>
+          </div>
+        </div>
+
         {/* Kolom Wajib */}
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
           <div className="border-b pb-3">

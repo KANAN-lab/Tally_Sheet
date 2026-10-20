@@ -9,6 +9,7 @@ import {
   Check,
   CheckCircle2,
   Clock,
+  FileCheck,
   FileSpreadsheet,
   FileText,
   History,
@@ -41,13 +42,13 @@ import { DetailSkeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/context/AuthContext";
 import { api, downloadExcel, errMsg } from "@/lib/api";
 import { canCancel, canEdit, fmtDate, fmtDateTime, openPrint, openBeritaAcaraPrint } from "@/lib/format";
-import { swalAlert, swalConfirm, swalPromptReason } from "@/lib/swal";
+import { swalAlert, swalConfirm, swalPromptReason, swalPromptGrPending } from "@/lib/swal";
 import { WorkflowService } from "@/services/WorkflowService";
 import { initSupabase } from "@/lib/supabase";
 
-function Stepper({ status }) {
-  const steps = WorkflowService.getStages();
-  const activeIndex = WorkflowService.getActiveStageIndex(status);
+function Stepper({ status, qcEnabled = true }) {
+  const steps = WorkflowService.getStages(qcEnabled);
+  const activeIndex = WorkflowService.getActiveStageIndex(status, qcEnabled);
   const isHold = WorkflowService.isHold(status);
   const isReject = WorkflowService.isReject(status);
 
@@ -55,12 +56,16 @@ function Stepper({ status }) {
     <div className="rounded-xl border bg-white p-5 shadow-sm space-y-4" data-testid="tally-workflow-stepper">
       <div className="flex items-center justify-between border-b pb-3">
         <div className="font-display text-sm font-bold text-[#0B2149]">
-          Siklus Hidup Dokumen: Checker → Admin Warehouse → Quality Control (Stock Ter-UU)
+          {qcEnabled
+            ? "Siklus Hidup Dokumen: Checker → Admin Warehouse → Quality Control (Stock Ter-UU)"
+            : "Siklus Hidup Dokumen: Checker → Admin Warehouse (Langsung Stock Ter-UU)"}
         </div>
-        <div className="text-xs text-slate-500">Traceability Pipeline Terintegrasi</div>
+        <div className="text-xs text-slate-500">
+          {qcEnabled ? "Alur Standar 3-Tahap" : "Alur Cepat 2-Tahap (Bypass QC)"}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className={`grid grid-cols-1 gap-3 ${qcEnabled ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
         {steps.map((s, idx) => {
           const isDone = activeIndex > idx;
           const isCurrent = activeIndex === idx;
@@ -126,6 +131,7 @@ export default function TallyDetail() {
   const [sheet, setSheet] = useState(null);
   const [history, setHistory] = useState([]);
   const [holdCategories, setHoldCategories] = useState([]);
+  const [qcEnabled, setQcEnabled] = useState(true);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [baModalOpen, setBaModalOpen] = useState(false);
@@ -147,6 +153,9 @@ export default function TallyDetail() {
       .then((r) => {
         if (r.data?.hold_categories) {
           setHoldCategories(r.data.hold_categories);
+        }
+        if (r.data && typeof r.data.qc_enabled === "boolean") {
+          setQcEnabled(r.data.qc_enabled);
         }
       })
       .catch(() => { });
@@ -301,7 +310,7 @@ export default function TallyDetail() {
       executeTransition(action, {});
     }
 
-    // 2. Admin Forward to QC
+    // 2. Admin Forward to QC (Saat QC Aktif)
     else if (action === "send_to_qc") {
       let resolutionReason = "";
       if (sheet.status === "admin_hold") {
@@ -323,6 +332,60 @@ export default function TallyDetail() {
       }
 
       executeTransition(action, { reason: resolutionReason });
+    }
+
+    // 2b. Admin Approve (Bypass QC -> Selesai & Stock Ter-UU Langsung)
+    else if (action === "admin_approve") {
+      let resolutionReason = "Verifikasi fisik & dokumen disetujui (Stock Ter-UU oleh Admin Warehouse)";
+      if (sheet.status === "admin_hold" || sheet.status === "qc_hold") {
+        const res = await swalPromptReason({
+          title: "Lepas Hold & Selesaikan Dokumen",
+          categories: ["Verifikasi Dokumen Revisi Selesai", "Kuantiti Fisik Telah Disesuaikan", "Surat Jalan / PO Telah Diperbaiki", "Lain-lain"],
+          confirmButtonText: "Selesaikan (Stock Ter-UU)"
+        });
+        if (!res) return;
+        resolutionReason = res.reason;
+      } else {
+        const ok = await swalConfirm({
+          title: "Selesaikan Dokumen & Stock Ter-UU?",
+          text: "Dokumen telah diverifikasi lengkap oleh Admin Warehouse. Status dokumen akan langsung diselesaikan dan stok fisik resmi diakui di sistem pabrik (Stock Ter-UU).",
+          confirmButtonText: "Ya, Selesaikan Dokumen",
+          confirmButtonColor: "#059669"
+        });
+        if (!ok) return;
+      }
+
+      executeTransition(action, { reason: resolutionReason });
+    }
+
+    // 2c. Admin Post GR (Pending UU - Opsi A)
+    else if (action === "post_gr_pending") {
+      const res = await swalPromptGrPending({
+        defaultGrNo: sheet.gr_no || "",
+        confirmButtonText: "Posting GR (Pending UU)"
+      });
+      if (!res) return;
+
+      executeTransition(action, {
+        gr_no: res.gr_no,
+        category: res.category,
+        reason: res.reason
+      });
+    }
+
+    // 2d. Release to UU (Pelepasan Stok ke Stock Ter-UU setelah COA lengkap)
+    else if (action === "release_to_uu") {
+      const ok = await swalConfirm({
+        title: "Rilis Stok ke Unrestricted Use (Stock Ter-UU)?",
+        text: "Pastikan lembar COA asli atau dokumen pendukung telah diterima dan diverifikasi sesuai standar mutu pabrik.",
+        confirmButtonText: "Ya, Rilis ke Stock Ter-UU",
+        confirmButtonColor: "#059669"
+      });
+      if (!ok) return;
+
+      executeTransition(action, {
+        reason: "Dokumen COA telah lengkap & valid (Stok resmi dilepas Ter-UU)"
+      });
     }
 
     // 3. Admin Hold
@@ -512,11 +575,39 @@ export default function TallyDetail() {
         }
       />
 
-      {/* WORKFLOW 3-STAGE STEPPER */}
-      <Stepper status={sheet.status} />
+      {/* WORKFLOW DYNAMIC STEPPER */}
+      <Stepper status={sheet.status} qcEnabled={qcEnabled} />
+
+      {/* GR DONE (PENDING UU) BANNER */}
+      {sheet.status === "gr_done" && (
+        <div
+          className="rounded-xl border-2 border-indigo-400 bg-indigo-50/80 p-4 shadow-sm"
+          data-testid="tally-detail-gr-done-alert"
+        >
+          <div className="flex items-start gap-3">
+            <FileCheck className="h-6 w-6 text-indigo-600 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <div className="font-bold text-indigo-950 text-sm flex flex-wrap items-center gap-2">
+                <span>SUDAH DI-GR DI SAP (PENDING UNRESTRICTED USE)</span>
+                {sheet.gr_no && (
+                  <span className="font-mono bg-indigo-200 text-indigo-900 px-2 py-0.5 rounded text-xs font-bold">
+                    No. GR: {sheet.gr_no}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-indigo-900 leading-relaxed font-medium">
+                Alasan / Status Penahanan: "{sheet.pending_reason || sheet.gr_notes || "Menunggu kelengkapan dokumen COA asli supplier"}"
+              </p>
+              <div className="text-[11px] text-indigo-800/80">
+                Diposting oleh: <strong>{sheet.gr_by_name || sheet.updated_by_name}</strong> pada {fmtDateTime(sheet.gr_at || sheet.updated_at)}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* PENDING / HOLD WARNING BANNER */}
-      {sheet.pending_reason && (
+      {sheet.pending_reason && sheet.status !== "gr_done" && (
         <div
           className="rounded-xl border-2 border-amber-400 bg-amber-50 p-4 shadow-sm"
           data-testid="tally-detail-hold-alert"
@@ -577,17 +668,78 @@ export default function TallyDetail() {
               </Button>
             )}
 
-            {/* 2. ADMIN ACTIONS (Tahap 1: Verifikasi & Forward QC) */}
+            {/* 2. ADMIN ACTIONS (Tahap 1: Verifikasi & Forward QC atau Selesaikan Dokumen jika QC nonaktif) */}
             {(sheet.status === "waiting_admin" || sheet.status === "waiting_admin_1" || sheet.status === "admin_hold") && (
+              <>
+                {qcEnabled ? (
+                  <Button
+                    disabled={busy}
+                    onClick={() => handleAction("send_to_qc")}
+                    className="bg-purple-700 hover:bg-purple-800 text-xs font-semibold"
+                    data-testid="action-send-to-qc"
+                  >
+                    <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> Teruskan ke QC (Request Sampling)
+                  </Button>
+                ) : (
+                  <Button
+                    disabled={busy}
+                    onClick={() => handleAction("admin_approve")}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white shadow-sm"
+                    data-testid="action-admin-approve"
+                  >
+                    <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Selesaikan Dokumen & Stock Ter-UU
+                  </Button>
+                )}
+                <Button
+                  disabled={busy}
+                  onClick={() => handleAction("post_gr_pending")}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-xs font-semibold text-white shadow-xs"
+                  data-testid="action-post-gr-pending"
+                >
+                  <FileCheck className="mr-1.5 h-3.5 w-3.5" /> Posting GR SAP (Pending UU)
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => handleAction("admin_hold")}
+                  className="text-amber-800 border-amber-300 hover:bg-amber-50 text-xs"
+                  data-testid="action-admin-hold"
+                >
+                  <Clock className="mr-1.5 h-3.5 w-3.5" /> Tahan Dokumen (Hold Admin)
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => handleAction("return_to_checker")}
+                  className="text-slate-700 hover:bg-slate-100 text-xs"
+                  data-testid="action-return-checker"
+                >
+                  <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Kembalikan ke Checker (Revisi)
+                </Button>
+              </>
+            )}
+
+            {/* OPSI A: Status Sudah di-GR (Pending UU - Menunggu Kelengkapan COA) */}
+            {sheet.status === "gr_done" && (
               <>
                 <Button
                   disabled={busy}
-                  onClick={() => handleAction("send_to_qc")}
-                  className="bg-purple-700 hover:bg-purple-800 text-xs font-semibold"
-                  data-testid="action-send-to-qc"
+                  onClick={() => handleAction("release_to_uu")}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white shadow-sm"
+                  data-testid="action-release-to-uu"
                 >
-                  <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> Teruskan ke QC (Request Sampling)
+                  <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Rilis ke Stock Ter-UU (COA Lengkap)
                 </Button>
+                {qcEnabled && (
+                  <Button
+                    disabled={busy}
+                    onClick={() => handleAction("send_to_qc")}
+                    className="bg-purple-700 hover:bg-purple-800 text-xs font-semibold text-white"
+                    data-testid="action-send-to-qc-from-gr"
+                  >
+                    <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> Teruskan ke QC (Request Sampling)
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   disabled={busy}
@@ -612,6 +764,16 @@ export default function TallyDetail() {
             {/* 3. QC ACTIONS (Tahap 2: Sampling & Pengujian Mutu -> SELESAI / STOCK TER-UU) */}
             {(sheet.status === "waiting_qc" || sheet.status === "qc_hold") && (
               <>
+                {!qcEnabled && (user?.role === "admin" || user?.role === "warehouse_admin") && (
+                  <Button
+                    disabled={busy}
+                    onClick={() => handleAction("admin_approve")}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white shadow-sm"
+                    data-testid="action-admin-bypass-qc"
+                  >
+                    <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Selesaikan Dokumen (Bypass QC)
+                  </Button>
+                )}
                 <Button
                   disabled={busy}
                   onClick={() => handleAction("qc_approve")}
@@ -675,6 +837,9 @@ export default function TallyDetail() {
           <MetaBox label="No. PO SAP" value={sheet.po_no} mono testId="detail-po-no" />
           <MetaBox label="Tanggal Kedatangan" value={sheet.arrival_date ? fmtDate(sheet.arrival_date) : "-"} testId="detail-arrival-date" />
           <MetaBox label="No. Polisi Armada Truk" value={sheet.truck_plate} mono testId="detail-truck-plate" />
+          {sheet.gr_no && (
+            <MetaBox label="No. Dokumen GR SAP" value={sheet.gr_no} mono testId="detail-gr-no" />
+          )}
         </div>
 
         {/* BERITA ACARA CONTAINER SECTION IF ACTIVE */}

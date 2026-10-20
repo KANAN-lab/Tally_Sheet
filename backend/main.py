@@ -141,9 +141,10 @@ def sync_from_supabase_if_needed(conn, sheet_id: str = None):
             r_set = requests.get(f"{SUPABASE_URL}/rest/v1/settings?id=eq.global", headers=get_sb_headers(), timeout=3)
             if r_set.status_code == 200 and r_set.json():
                 s_data = r_set.json()[0]
+                qc_en = 1 if s_data.get("qc_enabled", True) else 0
                 conn.execute("""
-                    INSERT OR REPLACE INTO settings (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, role_permissions_json, webhook_config_json, updated_at, updated_by_name)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO settings (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, role_permissions_json, webhook_config_json, qc_enabled, updated_at, updated_by_name)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     "global",
                     s_data.get("required_json") or "{}",
@@ -152,6 +153,7 @@ def sync_from_supabase_if_needed(conn, sheet_id: str = None):
                     s_data.get("qa_documents_json") or "{}",
                     s_data.get("role_permissions_json") or "{}",
                     s_data.get("webhook_config_json") or "{}",
+                    qc_en,
                     s_data.get("updated_at") or "",
                     s_data.get("updated_by_name") or ""
                 ))
@@ -596,6 +598,8 @@ def init_db():
             c.execute("ALTER TABLE settings ADD COLUMN role_permissions_json TEXT DEFAULT '{}'")
         if "webhook_config_json" not in set_cols:
             c.execute("ALTER TABLE settings ADD COLUMN webhook_config_json TEXT DEFAULT '{}'")
+        if "qc_enabled" not in set_cols:
+            c.execute("ALTER TABLE settings ADD COLUMN qc_enabled INTEGER DEFAULT 1")
     except Exception as e:
         print("Notice: check settings columns:", e)
 
@@ -1067,6 +1071,7 @@ class WebhookService:
             "tally.verified_to_qc": ("🔍 Verifikasi Admin WH & Teruskan ke QC", "Admin Warehouse memvalidasi dokumen dan mengajukan uji mutu ke Tim QC.", "Accent"),
             "tally.held": ("⚠️ Dokumen Ditahan (Hold Operasional)", "Dokumen ditahan karena kendala fisik, selisih kuantiti, atau administrasi surat jalan.", "Attention"),
             "tally.unheld": ("✅ Status Penahanan Dicabut (Un-Hold)", "Status penahanan berhasil diselesaikan dengan melampirkan catatan tindakan korektif.", "Good"),
+            "tally.gr_posted": ("📦 Penerimaan Barang Diposting (GR SAP)", "Admin Warehouse telah memposting GR di SAP (Menunggu kelengkapan COA / Pending UU).", "Accent"),
             "tally.approved_stock_uu": ("🎉 Lulus Uji Mutu (Stock Ter-UU / Closed)", "Tim QC meluluskan mutu kedatangan & dokumen resmi diakui di sistem stok pabrik.", "Good"),
             "tally.rejected": ("❌ Penolakan Mutu Kedatangan (QC Reject)", "Tim QC menolak mutu barang kedatangan berdasarkan uji fisik / laboratorium.", "Attention"),
             "tally.cancelled": ("🚫 Dokumen Dibatalkan (Cancelled)", "Dokumen tally sheet resmi dibatalkan oleh Super Admin.", "Default"),
@@ -1083,6 +1088,7 @@ class WebhookService:
         truck_plate = str(sheet_data.get("truck_plate") or "")
         arrival_date = str(sheet_data.get("arrival_date") or "")
         status = str(sheet_data.get("status") or "")
+        gr_no = str(sheet_data.get("gr_no") or "")
         pending_category = str(sheet_data.get("pending_category") or "")
         action_notes = notes or str(sheet_data.get("action_notes") or sheet_data.get("pending_reason") or "")
         actor_name = str(actor.get("name") or "System")
@@ -1095,6 +1101,8 @@ class WebhookService:
             facts.append({"title": "No Surat Jalan:", "value": delivery_note_no})
         if po_no:
             facts.append({"title": "No Purchase Order:", "value": po_no})
+        if gr_no:
+            facts.append({"title": "No. GR SAP:", "value": gr_no})
         if vendor_name:
             facts.append({"title": "Vendor / Supplier:", "value": vendor_name})
         if truck_plate:
@@ -1559,9 +1567,10 @@ def get_settings():
             r = requests.get(f"{SUPABASE_URL}/rest/v1/settings?id=eq.global", headers=get_sb_headers(), timeout=4)
             if r.status_code == 200 and r.json():
                 s_data = r.json()[0]
+                qc_en = 1 if s_data.get("qc_enabled", True) else 0
                 conn.execute("""
-                    INSERT OR REPLACE INTO settings (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, role_permissions_json, webhook_config_json, updated_at, updated_by_name)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO settings (id, required_json, duplicate_rule, hold_categories_json, qa_documents_json, role_permissions_json, webhook_config_json, qc_enabled, updated_at, updated_by_name)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     "global",
                     s_data.get("required_json") or "{}",
@@ -1570,6 +1579,7 @@ def get_settings():
                     s_data.get("qa_documents_json") or "{}",
                     s_data.get("role_permissions_json") or "{}",
                     s_data.get("webhook_config_json") or "{}",
+                    qc_en,
                     s_data.get("updated_at") or "",
                     s_data.get("updated_by_name") or ""
                 ))
@@ -1587,11 +1597,12 @@ class SettingsRequest(BaseModel):
     hold_categories: Optional[List[str]] = None
     qa_documents: Optional[Dict[str, Any]] = None
     webhook_config: Optional[Dict[str, Any]] = None
+    qc_enabled: Optional[bool] = None
 
 @app.put("/api/settings")
 def update_settings(req: SettingsRequest, admin: dict = Depends(require_admin)):
     conn = get_db()
-    res = SettingsService.update_settings(conn, req.required, req.duplicate_rule, req.hold_categories or DEFAULT_HOLD_CATEGORIES, admin["name"], req.qa_documents, req.webhook_config)
+    res = SettingsService.update_settings(conn, req.required, req.duplicate_rule, req.hold_categories or DEFAULT_HOLD_CATEGORIES, admin["name"], req.qa_documents, req.webhook_config, req.qc_enabled)
     conn.commit()
     conn.close()
 
@@ -1606,6 +1617,7 @@ def update_settings(req: SettingsRequest, admin: dict = Depends(require_admin)):
                 "qa_documents_json": json.dumps(res["qa_documents"]),
                 "role_permissions_json": json.dumps(res.get("role_permissions", DEFAULT_ROLE_PERMISSIONS)),
                 "webhook_config_json": json.dumps(res.get("webhook_config", DEFAULT_WEBHOOK_CONFIG)),
+                "qc_enabled": bool(res.get("qc_enabled", True)),
                 "updated_at": res["updated_at"],
                 "updated_by_name": admin["name"]
             }]
@@ -1621,7 +1633,8 @@ def update_settings(req: SettingsRequest, admin: dict = Depends(require_admin)):
             print("Notice: push settings to Supabase warning:", e)
     
     req_str = ", ".join([k for k, v in req.required.items() if v])
-    log_activity(admin["id"], admin["name"], "update_settings", "settings", "global", f"Kolom wajib: {req_str}; aturan duplikat: {req.duplicate_rule}; {len(res['hold_categories'])} kategori hold; QA Docs & Webhook diperbarui")
+    qc_mode = "QC Aktif (3-Tahap)" if res.get("qc_enabled", True) else "QC Nonaktif (2-Tahap Langsung)"
+    log_activity(admin["id"], admin["name"], "update_settings", "settings", "global", f"Mode Workflow: {qc_mode}; Kolom wajib: {req_str}; aturan duplikat: {req.duplicate_rule}; {len(res['hold_categories'])} kategori hold; QA Docs & Webhook diperbarui")
     return res
 
 class TestWebhookRequest(BaseModel):
@@ -2336,10 +2349,12 @@ class TallySheetInput(BaseModel):
     items: List[TallyItemInput]
 
 class WorkflowTransitionInput(BaseModel):
-    action: str  # "submit_to_admin", "admin_hold", "send_to_qc", "qc_hold", "qc_approve", "qc_reject", "admin_gr_hold", "post_gr", "return_to_checker"
+    action: str  # "submit_to_admin", "admin_hold", "post_gr_pending", "release_to_uu", "admin_approve", "send_to_qc", "qc_hold", "qc_approve", "qc_reject", "return_to_checker"
     category: Optional[str] = ""
     reason: Optional[str] = ""
     gr_no: Optional[str] = ""
+    gr_notes: Optional[str] = ""
+    resolution_notes: Optional[str] = ""
     qc_notes: Optional[str] = ""
 
 class BeritaAcaraAttachInput(BaseModel):
@@ -3086,6 +3101,7 @@ def transition_tally_sheet(sheet_id: str, req: WorkflowTransitionInput, user: di
         "current_handler_role": res["new_handler_role"], "current_handler_name": res["new_handler_name"],
         "pending_category": res["pending_category"], "pending_reason": res["pending_reason"],
         "qc_status": res["qc_status"], "qc_notes": res["qc_notes"], "qc_by_name": res["qc_by_name"], "qc_at": res["qc_at"],
+        "gr_no": res["gr_no"], "gr_by_name": res["gr_by_name"], "gr_by_id": res["gr_by_id"], "gr_at": res["gr_at"], "gr_notes": res["gr_notes"],
         "finalized_at": res["finalized_at"], "finalized_by": res["finalized_by"], "finalized_by_name": res["finalized_by_name"],
         "updated_at": res["updated_at"], "updated_by": res["updated_by"], "updated_by_name": res["updated_by_name"]
     }, None, {
@@ -3098,6 +3114,9 @@ def transition_tally_sheet(sheet_id: str, req: WorkflowTransitionInput, user: di
 
     # Webhook triggers for workflow transitions
     event_map = {
+        "admin_approve": "tally.approved_stock_uu",
+        "post_gr_pending": "tally.gr_posted",
+        "release_to_uu": "tally.approved_stock_uu",
         "send_to_qc": "tally.verified_to_qc",
         "verify_to_qc": "tally.verified_to_qc",
         "admin_hold": "tally.held",
@@ -3112,7 +3131,9 @@ def transition_tally_sheet(sheet_id: str, req: WorkflowTransitionInput, user: di
         "id": res["actual_id"],
         "status": res["new_status"],
         "pending_category": res["pending_category"],
-        "pending_reason": res["pending_reason"]
+        "pending_reason": res["pending_reason"],
+        "gr_no": res["gr_no"],
+        "gr_notes": res["gr_notes"]
     }
     if res["old_status"] in ["admin_hold", "qc_hold"] and res["new_status"] not in ["admin_hold", "qc_hold"]:
         unhold_note = req.dict().get("resolution_notes") or req.dict().get("reason") or res["log_detail"]

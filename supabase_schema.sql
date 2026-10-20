@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS public.settings (
     qa_documents_json TEXT DEFAULT '{}',
     role_permissions_json TEXT DEFAULT '{}',
     webhook_config_json TEXT DEFAULT '{}',
+    qc_enabled BOOLEAN DEFAULT true,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
     updated_by_name TEXT NOT NULL
 );
@@ -50,6 +51,7 @@ ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS hold_categories_json TEXT D
 ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS qa_documents_json TEXT DEFAULT '{}';
 ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS role_permissions_json TEXT DEFAULT '{}';
 ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS webhook_config_json TEXT DEFAULT '{}';
+ALTER TABLE public.settings ADD COLUMN IF NOT EXISTS qc_enabled BOOLEAN DEFAULT true;
 
 -- 3. MASTER VERSIONS TABLE
 CREATE TABLE IF NOT EXISTS public.master_versions (

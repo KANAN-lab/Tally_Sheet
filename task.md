@@ -23,14 +23,13 @@ Dokumen ini melacak status pengerjaan fitur, perbaikan bug, arsitektur sistem, d
 
 ## ✅ 1. Fitur & Perbaikan yang SUDAH Selesai
 
-### A. Alur Bisnis 3-Tahap (Checker → Admin Warehouse → QC)
-- [x] **Alur 3-Tahap Resmi**:
-  1. **Checker**: Membuat draf tally sheet, mengisi nomor Surat Jalan, PO SAP, tanggal kedatangan, no polisi armada, serta mencatat hasil cek fisik material dan batch, kemudian meneruskan ke Admin Warehouse (`waiting_admin`).
-  2. **Admin Warehouse**: Melakukan verifikasi fisik vs dokumen. Dapat menahan (`hold_admin` dengan alasan & kategori) atau meneruskan ke Quality Control (`waiting_qc`).
-  3. **Quality Control (QC)**: Melakukan inspeksi mutu. Menyetujui sebagai *"Lolos Uji Mutu / Stock Ter-UU"* yang langsung menyelesaikan dokumen (`completed`) atau menahan/membatalkan (`hold_qc` / `cancelled`).
-- [x] **Tanpa Input COA pada QC**: Sesuai instruksi bisnis terbaru, QC tidak perlu memasukkan nomor COA saat persetujuan.
-- [x] **Status Khusus "Stock Ter-UU"**: Dokumen yang disetujui QC langsung berstatus selesai dan stok fisik ditandai resmi ter-UU.
-- [x] **Audit Trail & Traceability**: Setiap perubahan status mencatat nama aktor, peran (role), tanggal/waktu, serta alasan penahanan (pending reason & category).
+- [x] **Alur Dinamis (Dynamic QC Workflow Toggle)**:
+  - Super Administrator dapat mematikan (*disable*) atau mengaktifkan (*enable*) tahapan QC via menu Pengaturan (`/settings`).
+  - **Mode QC Aktif (3-Tahap)**: Checker ➔ Admin Warehouse ➔ QC (Stock Ter-UU).
+  - **Mode QC Nonaktif (2-Tahap Langsung)**: Dokumen cukup diverifikasi oleh Admin Warehouse dan langsung dapat diselesaikan ke status Selesai (`completed` / Stock Ter-UU) melalui tombol aksi `admin_approve`.
+  - Kode dan role QC tetap dipertahankan 100% tanpa dihapus (*zero breaking change*).
+  - Skema tabel `settings` SQLite & Supabase mendukung kolom `qc_enabled BOOLEAN DEFAULT true`.
+  - Spesifikasi lengkap didokumentasikan di `flow.md`.
 
 ### B. UI/UX & Form Wizard
 - [x] **Tally Editor Multi-Step Wizard**:
